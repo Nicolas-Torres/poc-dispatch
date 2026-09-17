@@ -1,3 +1,7 @@
 - Desarrollar un sistema basado en dispath (leer los 2 archivos de: docs\contexto\ )
 - Este sistema debe ser usable y customizable en la medida que un sistema dispatch real lo permita
 - Este sistema será usado para simular una mina digital (un gemelo digital de una mina cualquiera)
+- Agrega como feature adicional lo siguiente: una app visual interactivo donde se pueda ver el sistema funcionando, palas, camiones, etc en movimiento, un dashboard de KPIs, productividad, etc y todo lo necesario que esta dentro de lo construido (practicamente una demo real), ayudate de Claude playwright para ir iterando los resultados visuales.
+- Evalua opciones, tecnologias, arquitectura y herramientas, luego toma la decisiones adecuadas y genera la app, donde un usuario pueda ejecutar una o varias demos, y no estar ejecutando comandos a mano.
+- El visual interactivo debe ser en 3D, he escuchado que la libreria Three.js es muy buena, evalualo.
+- Finalmente debes entregar una demo, probada, usable y demostrable ante un comité.
