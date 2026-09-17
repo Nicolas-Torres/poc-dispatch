@@ -94,17 +94,19 @@ def test_the_plan_keeps_the_crusher_in_its_blend_window(shift) -> None:
     assert all(blend["in_spec"] for blend in shift["kpis"]["blends"])
 
 
-def test_the_myopic_baseline_moves_the_same_rock_for_less_money(client) -> None:
-    """The headline of the demo, asserted rather than asserted-by-screenshot."""
+def test_the_myopic_baseline_moves_more_rock_for_less_money(client) -> None:
+    """The headline of the demo, asserted rather than asserted-by-screenshot.
+
+    Moving rock and making money are not the same thing: the myopic baseline
+    keeps its trucks busier and delivers the wrong mix to the wrong places.
+    """
     payloads = {
         policy: client.post(
             "/api/run", json={"scenario": "toy", "policy": policy, "hours": 2.0}
         ).json()["kpis"]
         for policy in ("neediest", "earliest")
     }
-    assert payloads["earliest"]["tonnes_tipped"] == pytest.approx(
-        payloads["neediest"]["tonnes_tipped"]
-    )
+    assert payloads["earliest"]["tonnes_tipped"] >= payloads["neediest"]["tonnes_tipped"]
     assert payloads["earliest"]["plan_value"] < payloads["neediest"]["plan_value"]
 
 

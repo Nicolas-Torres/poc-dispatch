@@ -91,21 +91,23 @@ tests de `apps/dispatch-web/tests/` cubren lo que sí es verificable:
   tablero que muestre números inventados;
 - cada botón de demo apunta a un escenario y una política que existen (una tarjeta muerta es el bug
   que un comité sí o sí encuentra);
-- el titular de la demo, aseverado y no solo dibujado: la heurística miope mueve **el mismo tonelaje**
-  y produce **menos valor**.
+- el titular de la demo, aseverado y no solo dibujado: la heurística miope mueve **al menos tanto
+  tonelaje** y produce **menos valor**.
 
 Barrido final de las cinco demos en Chromium headless, corridas hasta el final de la línea de tiempo,
 sin errores de consola:
 
 | Demo | Escenario | t volteadas | Valor | Ley al chancador |
 |---|---|---|---|---|
-| Un turno normal | toy, 2 h | 5.280 | 16.720 | 0.740 en spec |
-| Se cae una pala | toy-failure, 2 h | 4.620 | 10.340 | 0.740 en spec |
-| Dos destinos | toy-stockpile, 4 h | 11.000 | 29.040 | 0.761 en spec |
-| El mundo real | toy-variable, 4 h | 10.560 | 33.440 | 0.740 en spec |
-| **Sin plan** | toy, 2 h, `earliest` | **5.280** | **13.200** | 0.729 en spec |
+| Un turno normal | toy, 2 h | 4.400 | 13.200 | 0.767 en spec |
+| Se cae una pala | toy-failure, 2 h | 4.620 | 9.900 | 0.767 en spec |
+| Dos destinos | toy-stockpile, 4 h | 10.340 | 26.972 | 0.767 en spec |
+| El mundo real | toy-variable, 4 h | 9.900 | 29.700 | 0.759 en spec |
+| **Sin plan** | toy, 2 h, `earliest` | **5.060** | **11.220** | **0.820 fuera** |
 
-La primera y la última fila son la demo: **la misma mina, el mismo tonelaje, 21 % menos de valor**.
+La primera y la última fila son la demo, y desde la [etapa 13](13-seguimiento-del-plan.md) el
+contraste es el completo: la misma mina, despachando al más cercano, **mueve más roca (5.060 contra
+4.400), gana 15 % menos valor y entrega el mineral fuera de ley**. Los tres hechos en una pantalla.
 
 ## Decisiones y límites
 

@@ -7,7 +7,10 @@ from dispatch_engine.domain.assignment import Assignment, Destination
 from dispatch_engine.domain.equipment import Shovel, TruckId
 from dispatch_engine.domain.mine import ZoneId
 from dispatch_engine.domain.snapshot import MineSnapshot
-from dispatch_engine.policies.common import plan_tracking_destination
+from dispatch_engine.policies.common import (
+    dispatchable_candidates,
+    plan_tracking_destination,
+)
 from dispatch_engine.production_plan import ProductionPlan
 
 
@@ -27,6 +30,9 @@ class LongestWaitingShovelPolicy:
 
     best_path: BestPath
     plan: ProductionPlan
+    # SH_PARAM: a haul counts as short when it is within this fraction of the
+    # longest haul on offer. Only bites on trucks restricted to short hauls.
+    sh_param: float = 0.5
 
     def assign(self, snapshot: MineSnapshot, truck_id: TruckId) -> Assignment | None:
         locked_to = snapshot.overrides.locked.get(truck_id)
@@ -39,7 +45,17 @@ class LongestWaitingShovelPolicy:
         waiting_s = {
             shovel_id: snapshot.waiting_since_s(shovel_id)
             for shovel_id in snapshot.available_shovels()
-            if truck_id in {candidate.truck.id for candidate in snapshot.candidates_for(shovel_id)}
+            if truck_id
+            in {
+                candidate.truck.id
+                for candidate in dispatchable_candidates(
+                    self.best_path,
+                    snapshot,
+                    snapshot.shovels[shovel_id].shovel,
+                    {truck_id},
+                    self.sh_param,
+                )
+            }
         }
         if not waiting_s:
             return None

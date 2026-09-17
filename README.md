@@ -66,6 +66,7 @@ uv sync
 uv run dispatch-cli scenarios                     # escenarios disponibles
 uv run dispatch-cli plan --scenario toy           # etapa 2: el plan de producción
 uv run dispatch-cli run --scenario toy --hours 2  # corrida completa con KPIs
+uv run dispatch-cli run --scenario toy-restricted --hours 8   # media flota danada
 
 uv run dispatch-demo                              # la demo visual 3D en el navegador
 ```
@@ -174,17 +175,18 @@ es la decisión de pala.
 
 ```
   metric                    neediest    earliest
-  tonnes moved                11,000      11,000
-  plan value                  29,040      23,804
-  truck queueing (min)          43.1        22.6
-  crusher cu                   0.761       0.689
+  tonnes moved                11,440      11,660
+  plan value                  26,972      20,944
+  truck queueing (min)          24.9        15.7
+  crusher cu                   0.767       0.746
     window               0.60 - 0.80
 ```
 
-La heurística simple hace exactamente lo que promete: **casi la mitad de tiempo de cola**, y en la
-mina base incluso mueve más toneladas. Pero gana entre 17 % y 23 % menos valor, porque manda los
-camiones a la pala que los atiende antes en vez de a la que el plan necesita. Es el resultado que
-justifica la arquitectura de dos etapas: mover más material más rápido no es el objetivo.
+La heurística simple hace exactamente lo que promete: **menos tiempo de cola**, y mueve **más**
+toneladas. Pero gana entre 29 % y 30 % menos valor, porque manda los camiones a la pala que los
+atiende antes en vez de a la que el plan necesita. Es el resultado que justifica la arquitectura de
+dos etapas: **mover más roca y ganar menos plata es un desenlace perfectamente posible**, y es lo que
+pasa cuando el despacho optimiza lo que es fácil de medir.
 
 ### ¿Y si el mundo no es perfecto?
 
@@ -197,15 +199,19 @@ los ciclos no cambia — solo su dispersión — así que cualquier diferencia e
 
 |  | determinista | con variabilidad |
 |---|---|---|
-| Ventaja en valor del plan sobre la baseline | +31,5 % | **+33,2 %** |
-| Toneladas movidas | 69.960 | 66.946 ± 1.287 |
-| Cola de camiones | 41 min | **84 ± 32 min** |
-| Ley entregada | 0,750 | 0,751 ± 0,003 |
+| Ventaja en valor del plan sobre la baseline | +32,9 % | **+22,2 %** |
+| Toneladas movidas | 65.560 | 62.766 ± 2.198 |
+| Cola de camiones | 33,5 min | **48,3 ± 23,9 min** |
+| Ley entregada | 0,754 ± 0 | 0,753 ± 0,001 |
+| Ley entregada por la baseline | 0,889 (fuera) | 0,847 ± 0,036 (fuera) |
 
-**La ventaja sobrevive y crece.** Y aparecen dos cosas que el gemelo determinista escondía: la
-varianza sola cuesta un 4 % de producción con ciclos de media idéntica, y la cola de camiones se
-duplica. El fenómeno principal que un dispatch administra prácticamente no existía en el modelo sin
-ruido.
+**La ventaja sobrevive al ruido, aunque se encoge**: de +33 % a +22 %. Parte de lo que la baseline
+"gana" bajo ruido lo gana entregando fuera de ley, que es valor que una planta no paga.
+
+Ahí está el resultado más contundente, y no es la media sino la dispersión: seguir el plan entrega
+la ley con **±0,001 de desviación contra ±0,036**. Para una concentradora esa varianza es el
+problema, no el promedio. Y aparece algo que el gemelo determinista escondía: la varianza sola cuesta
+producción con ciclos de media idéntica, y la cola de camiones crece la mitad otra vez.
 
 ### Tu propia mina
 
@@ -257,9 +263,23 @@ Los dos puntos de corte que sostienen la arquitectura:
   de dos etapas y la baseline de la literatura, y ahí entraría a futuro una por aprendizaje por
   refuerzo.
 
-La intervención manual del despachador —fijar un camión a una pala, excluir equipos, cambiar
-prioridades— viaja en el snapshot (`Overrides`), así que cualquier política la respeta sin
-reimplementarla.
+La intervención manual del despachador —fijar un camión a una pala, excluir equipos, y las tres
+restricciones operativas de la patente— viaja en el snapshot (`Overrides`), así que cualquier política
+la respeta sin reimplementarla, y se declara en el archivo de escenario sin escribir código:
+
+```yaml
+dispatcher:
+  restrictions:
+  - truck: CAT01
+    load_factor: 0.6        # tolva rajada: sigue cargando, al 60 %
+  - truck: CAT02
+    speed_factor: 0.7       # motor fallando: anda mas lento
+  - truck: CAT03
+    short_hauls_only: true  # transmision mal: solo acarreos cortos
+```
+
+Mantener un camión así rinde entre **9 % y 15 % más valor que estacionarlo**, que era la única opción
+que el motor tenía antes.
 
 ## Desarrollo
 
@@ -287,10 +307,6 @@ Las tres etapas están implementadas y corren punta a punta, el plan se re-resue
 sale de servicio, y los destinos siguen el reparto por ruta que calculó el LP. Lo que falta, en orden
 de importancia:
 
-- Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
-- Que el LP conozca la granularidad de la flota y no proponga proporciones que exigen fracciones de
-  camión — hoy se compensa a mano con un margen de mezcla, y sería un modelo entero-mixto.
-- Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, pero la lluvia enlentece todos
   los viajes a la vez y son esos días los que marcan el peor caso.
 

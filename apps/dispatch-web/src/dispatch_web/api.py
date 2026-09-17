@@ -62,9 +62,17 @@ DEMOS = [
         "hours": 4.0,
     },
     {
+        "id": "restricted",
+        "title": "Equipos a media máquina",
+        "blurb": "Media flota dañada pero trabajando: carga, velocidad y alcance recortados.",
+        "scenario": "toy-restricted",
+        "policy": "neediest",
+        "hours": 4.0,
+    },
+    {
         "id": "myopic",
         "title": "Sin plan: la heurística miope",
-        "blurb": "La misma mina despachando al más cercano. Mueve lo mismo y vale menos.",
+        "blurb": "La misma mina despachando al más cercano. Mueve más roca y vale menos.",
         "scenario": "toy",
         "policy": "earliest",
         "hours": 2.0,
