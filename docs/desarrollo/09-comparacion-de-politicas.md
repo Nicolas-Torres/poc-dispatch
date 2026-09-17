@@ -69,12 +69,43 @@ aleja del objetivo.
 Es el resultado que justifica la arquitectura de dos etapas: **mover más material más rápido no es el
 objetivo**. Sin un plan contra el cual medirse, una política no tiene forma de saberlo.
 
+## La segunda baseline: repartir parejo
+
+`LongestWaitingShovelPolicy` es la otra heurística "1 camión para n palas" de la literatura: manda el
+camión a la pala que lleva más tiempo sin recibir uno. Donde `earliest` optimiza para el **camión**,
+esta optimiza para las **palas** — reparte la flota pareja — pero es igual de ciega al plan: un
+reparto parejo solo es el correcto si todas las palas valen lo mismo.
+
+24 horas sobre `toy-variable`, 10 réplicas:
+
+```
+  metric                     neediest          earliest           longest
+  tonnes moved        66,726 +/-2,397   67,342 +/-1,815   65,736 +/-2,180
+  plan value        191,004 +/-18,353 150,700 +/-11,439  172,678 +/-7,757
+  truck queueing (min)  144.7 +/-63.4      62.2 +/-25.6      73.9 +/-18.6
+  shovel idle (min)       2,823 +/-58       2,852 +/-55       2,772 +/-60
+  crusher cu           0.840 +/-0.008    0.801 +/-0.045    0.698 +/-0.006
+```
+
+**Cae entre las dos, como cabía esperar**: repartir parejo se acerca más al plan que ir a la pala más
+cercana, pero sigue sin ser el plan. Y hace exactamente lo que promete — tiene el menor ocioso de
+palas de las tres.
+
+Dos observaciones que no anticipé:
+
+- **Es la política más predecible.** Su dispersión de valor es menos de la mitad que la de
+  `neediest` (±7.757 contra ±18.353). Repartir parejo no rinde tanto, pero rinde parecido todos los
+  días. Para una operación que valore la previsibilidad por encima del promedio, ese es un argumento
+  real.
+- **Es la que mejor cumple la ley, y por accidente.** Entrega 0,698 ± 0,006, cómodamente dentro de la
+  ventana, mientras que `neediest` entrega 0,840 y se sale. La causa es que al repartir parejo entre
+  los dos bancos de mineral la mezcla tiende al punto medio de las leyes, mientras que la política que
+  sigue el plan persigue un plan **parado sobre el límite** (ver [02](02-plan-de-produccion.md)). La
+  política de mayor valor es la que más incumple la especificación de la planta, y no porque sea peor
+  sino porque el plan que persigue no dejó margen.
+
 ## Limitaciones
 
-- **Una sola baseline.** Falta la otra heurística clásica, "la pala que lleva más tiempo sin recibir
-  camión", que requiere registrar en el snapshot cuándo fue el último despacho a cada pala.
-- **Una sola corrida por política.** Como todo es determinista, la comparación no tiene barras de
-  error; cuando se agregue variabilidad habrá que comparar sobre varias réplicas.
 - **`compare` fija el plan LP y los parámetros por defecto.** No permite comparar, por ejemplo, la
   misma política con distintos `--shovel-idle-weight`.
 - La baseline **también hereda la replanificación**: si una pala cae, su plan de destinos cambia. Es
