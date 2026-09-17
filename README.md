@@ -174,6 +174,26 @@ mina base incluso mueve más toneladas. Pero gana entre 17 % y 23 % menos valor,
 camiones a la pala que los atiende antes en vez de a la que el plan necesita. Es el resultado que
 justifica la arquitectura de dos etapas: mover más material más rápido no es el objetivo.
 
+### ¿Y si el mundo no es perfecto?
+
+```bash
+uv run dispatch-cli compare --scenario toy-variable --hours 24 --replicas 10
+```
+
+Misma mina, pero con dispersión en los tiempos de ciclo y equipos que se rompen solos. La media de
+los ciclos no cambia — solo su dispersión — así que cualquier diferencia es atribuible a la varianza.
+
+|  | determinista | con variabilidad |
+|---|---|---|
+| Ventaja en valor del plan sobre la baseline | +22,6 % | **+26,7 %** |
+| Toneladas movidas | 71.280 | 66.726 ± 2.397 |
+| Cola de camiones | 30 min | **145 ± 63 min** |
+
+**La ventaja sobrevive y crece.** Y aparecen dos cosas que el gemelo determinista escondía: la
+varianza sola cuesta un 6 % de producción con ciclos de media idéntica, y la cola de camiones casi se
+quintuplica. El fenómeno principal que un dispatch administra prácticamente no existía en el modelo
+sin ruido.
+
 ### Tu propia mina
 
 Los escenarios de arriba vienen incorporados, pero la idea es simular una mina cualquiera. Se exporta
@@ -250,11 +270,11 @@ Las tres etapas están implementadas y corren punta a punta, el plan se re-resue
 sale de servicio, y los destinos siguen el reparto por ruta que calculó el LP. Lo que falta, en orden
 de importancia:
 
-- Los demás disparadores de replanificación: cambio de material en un banco, camión que entra o sale.
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
 - La otra heurística baseline: "la pala que lleva más tiempo sin recibir camión".
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
-- Variabilidad estocástica y fallas de camión; hoy las paradas son deterministas y programadas.
+- Correlación entre eventos: hoy cada tiempo se sortea independiente, pero la lluvia enlentece todos
+  los viajes a la vez y son esos días los que marcan el peor caso.
 
 ## Documentación
 

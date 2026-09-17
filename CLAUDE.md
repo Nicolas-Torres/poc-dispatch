@@ -110,3 +110,31 @@ el trabajo de implementación, pero aún no decidido.
 - **Commits intermedios**: Conventional Commits, **solo el subject line, sin cuerpo** —
   ej.: `feat(db): add threat_indicators governance table`.
 - **Descripción del PR**: máximo 6 líneas.
+
+## Autonomía y verificación
+
+Claude abre y mergea sus propios PRs sin pedir confirmación, y elige el siguiente paso. **La
+contrapartida no es opcional: ningún PR se abre sin haber verificado su hipótesis midiendo.** Tests en
+verde no cuentan como verificación — sirven para que el código no se rompa, no para saber si el cambio
+sirvió.
+
+Antes de abrir cada PR:
+
+1. **Hipótesis escrita antes de implementar**: qué se espera que cambie, en qué dirección y cuánto.
+2. **Medir contra `main`**: correr el escenario relevante en las dos ramas y comparar los números.
+3. **Control de no-regresión**: los escenarios existentes dan los mismos números, salvo que el cambio
+   busque moverlos — y entonces decirlo explícitamente.
+4. **Si la medición contradice la hipótesis**: revertir o corregir, nunca mergear igual. El resultado
+   negativo se documenta, que es información valiosa.
+5. **Los hallazgos que aparezcan al verificar** se arreglan en el mismo PR o se anotan como pendiente
+   antes de abrirlo, nunca se dejan pasar en silencio.
+6. `uv run pytest` y `uv run ruff check .` en verde.
+
+La regla existe para repetir lo que funcionó y evitar lo que casi falla:
+
+- La etapa 02 se validó midiendo adhesión al plan (71/44/89 % → 89/82/124 %), no asumiendo que el LP
+  ayudaría.
+- La propuesta de pesar la magnitud de la necesidad parecía obviamente correcta: se implementó, se
+  midió, **empeoró 5 %** y se revirtió.
+- El KPI de tonelaje truncado y la ley fuera de especificación salieron de **correr** la herramienta,
+  no de leer el código.

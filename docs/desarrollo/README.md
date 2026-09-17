@@ -15,6 +15,7 @@ problemas aparecieron en el camino.
 | [07 — Destinos que salen del plan](07-destinos-planificados.md) | Reparto de destinos por ruta y ley entregada |
 | [08 — Minas en archivo](08-escenarios-en-archivo.md) | Escenarios YAML/JSON y log de ciclos en CSV |
 | [09 — Comparación de políticas](09-comparacion-de-politicas.md) | La baseline de la literatura y cuánto compra el plan |
+| [10 — Variabilidad estocástica](10-variabilidad.md) | Ruido, fallas de equipo y réplicas; ¿sobrevive la ventaja? |
 
 ## Estado actual
 
@@ -35,13 +36,15 @@ los camiones contra ese plan.
 - Intervención manual del despachador (fijar camión a pala, excluir equipos).
 - Minas propias definidas en YAML/JSON y log de ciclos persistido a CSV.
 - Una política baseline de la literatura y un comando para comparar estrategias sobre la misma mina.
+- Variabilidad estocástica opcional: dispersión de ciclos, fallas de camión y pala, semilla y
+  réplicas con media ± dispersión.
 
 **Lo que falta**
 
-- Los demás disparadores de replanificación: cambio de material, camión que entra o sale de flota.
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
 - Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
-- Variabilidad estocástica: hoy las paradas son deterministas y programadas.
+- Correlación entre eventos: hoy cada tiempo se sortea independiente, y la lluvia enlentece todo a la
+  vez.
 
 ## Cómo correrlo
 
