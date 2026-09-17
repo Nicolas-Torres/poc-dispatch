@@ -1,20 +1,22 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Annotated
+from statistics import fmean
+from typing import Annotated, Any
 
 import typer
 from dispatch_engine.best_path import BestPath
-from dispatch_engine.domain.equipment import ShovelId
 from dispatch_engine.lp import BlendTarget
 from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.policy import DispatchPolicy
 from dispatch_engine.production_plan import ProductionPlan
 from mine_sim.events import Kpis
-from mine_sim.planning import solve_scenario_plan
+from mine_sim.planning import PlanConditions, solve_scenario_plan
+from mine_sim.replicas import seeds, spread
 from mine_sim.scenario import (
     SCENARIOS,
     Scenario,
@@ -44,6 +46,10 @@ ScenarioOption = Annotated[
 ]
 HorizonOption = Annotated[
     float, typer.Option(help="Window the static plan measures required haulage over.")
+]
+SeedOption = Annotated[int, typer.Option(help="Seed of the first replica; a run is reproducible.")]
+ReplicasOption = Annotated[
+    int, typer.Option(min=1, help="Runs to average over. With variability, one run says little.")
 ]
 
 
@@ -99,6 +105,8 @@ def run(
     shovel_idle_weight: Annotated[
         float, typer.Option(help="Weight of shovel idle time against truck queueing.")
     ] = 1.0,
+    seed: SeedOption = 1,
+    replicas: ReplicasOption = 1,
     export_events: Annotated[
         Path | None, typer.Option(help="Write the cycle event log to this CSV file.")
     ] = None,
@@ -106,19 +114,27 @@ def run(
     """Run a scenario and report haulage KPIs."""
     built = _scenario(scenario)
     best_path = BestPath(built.mine.network)
+    provider = _plan_provider(plan, built, best_path, horizon_min)
+    factory = _policy_factory(policy, best_path, shovel_idle_weight)
 
-    simulation = Simulation(
-        built,
-        _policy_factory(policy, best_path, shovel_idle_weight),
-        plan_provider=_plan_provider(plan, built, best_path, horizon_min),
-        best_path=best_path,
-    )
-    kpis = simulation.run(until_s=hours * 3600.0)
-    _report(built, kpis, simulation.plan, f"{plan} plan, {policy} policy")
+    simulations = []
+    runs = []
+    for run_seed in seeds(seed, replicas):
+        simulation = Simulation(
+            built, factory, plan_provider=provider, best_path=best_path, seed=run_seed
+        )
+        runs.append(simulation.run(until_s=hours * 3600.0))
+        simulations.append(simulation)
+
+    setup = f"{plan} plan, {policy} policy"
+    if replicas > 1:
+        setup += f", {replicas} replicas from seed {seed}"
+    _report(built, runs, simulations[-1].plan, setup)
 
     if export_events is not None:
-        simulation.log.to_csv(export_events)
-        typer.echo(f"\nwrote {len(simulation.log.events):,} events to {export_events}")
+        log = simulations[0].log
+        log.to_csv(export_events)
+        typer.echo(f"\nwrote {len(log.events):,} events to {export_events}")
 
 
 def _spec(name: str) -> ScenarioSpec:
@@ -150,50 +166,59 @@ def _scenario(name: str) -> Scenario:
 def compare(
     scenario: ScenarioOption = "toy-stockpile",
     hours: Annotated[float, typer.Option(help="Simulated hours to run.")] = 4.0,
+    seed: SeedOption = 1,
+    # Defaulted above one because comparing two policies on a single noisy run
+    # invites conclusions the data does not support.
+    replicas: ReplicasOption = 5,
 ) -> None:
     """Run every policy on the same mine and fleet, and compare what they achieve."""
     built = _scenario(scenario)
     best_path = BestPath(built.mine.network)
     provider = _plan_provider("lp", built, best_path, horizon_min=30.0)
 
-    results = {}
+    results: dict[str, list[Kpis]] = {}
     for name in POLICIES:
-        simulation = Simulation(
-            built,
-            _policy_factory(name, best_path, shovel_idle_weight=1.0),
-            plan_provider=provider,
-            best_path=best_path,
-        )
-        results[name] = simulation.run(until_s=hours * 3600.0)
+        factory = _policy_factory(name, best_path, shovel_idle_weight=1.0)
+        # The same seeds for every policy: they are compared on the same worlds,
+        # not on different ones that happen to share a distribution.
+        results[name] = [
+            Simulation(
+                built, factory, plan_provider=provider, best_path=best_path, seed=run_seed
+            ).run(until_s=hours * 3600.0)
+            for run_seed in seeds(seed, replicas)
+        ]
 
-    typer.echo(f"scenario {built.name} - {hours:.1f} h - lp plan\n")
-    header = "  metric                " + "".join(f"{name:>12}" for name in POLICIES)
-    typer.echo(header)
-    _compare_row("tonnes moved", results, lambda kpis: f"{kpis.tonnes_moved:,.0f}")
-    _compare_row("plan value", results, lambda kpis: f"{_realised_value(built, kpis):,.0f}")
-    _compare_row("cycles", results, lambda kpis: f"{kpis.cycles}")
-    _compare_row(
-        "truck queueing (min)", results, lambda kpis: f"{kpis.truck_queue_time_s / 60:,.1f}"
-    )
+    replica_note = f", {replicas} replicas from seed {seed}" if replicas > 1 else ""
+    typer.echo(f"scenario {built.name} - {hours:.1f} h - lp plan{replica_note}\n")
+    typer.echo("  metric                " + "".join(f"{name:>18}" for name in POLICIES))
+    _compare_row("tonnes moved", results, lambda kpis: kpis.tonnes_moved)
+    _compare_row("plan value", results, lambda kpis: _realised_value(built, kpis))
+    _compare_row("cycles", results, lambda kpis: kpis.cycles)
+    _compare_row("truck queueing (min)", results, lambda kpis: kpis.truck_queue_time_s / 60, 1)
     _compare_row(
         "shovel idle (min)",
         results,
-        lambda kpis: f"{sum(shovel.idle_time_s for shovel in kpis.shovels) / 60:,.0f}",
+        lambda kpis: sum(shovel.idle_time_s for shovel in kpis.shovels) / 60,
     )
     for target in built.plan_inputs.blend_targets:
-        label = f"{target.dump_zone_id} {target.element}"
         _compare_row(
-            label,
+            f"{target.dump_zone_id} {target.element}",
             results,
-            lambda kpis, target=target: f"{_delivered_grade(built, kpis, target):.3f}",
+            lambda kpis, target=target: _delivered_grade(built, kpis, target),
+            3,
         )
         low = "-" if target.min_grade is None else f"{target.min_grade:.2f}"
         high = "-" if target.max_grade is None else f"{target.max_grade:.2f}"
-        typer.echo(f"  {'  window':<22}{low + ' - ' + high:>12}")
+        typer.echo(f"  {'  window':<22}{low + ' - ' + high:>18}")
 
 
-def _compare_row(label: str, results: dict[str, Kpis], value: Callable[[Kpis], str]) -> None:
-    cells = "".join(f"{value(results[name]):>12}" for name in POLICIES)
+def _compare_row(
+    label: str,
+    results: dict[str, list[Kpis]],
+    metric: Callable[[Kpis], float],
+    precision: int = 0,
+) -> None:
+    cells = "".join(f"{spread(results[name], metric).format(precision):>18}" for name in POLICIES)
     typer.echo(f"  {label:<22}{cells}")
 
 
@@ -247,8 +272,8 @@ def _plan_provider(
 ) -> PlanProvider:
     if kind == "lp":
 
-        def solved(unavailable: frozenset[ShovelId]) -> ProductionPlan:
-            return solve_scenario_plan(scenario, best_path, unavailable=unavailable)
+        def solved(conditions: PlanConditions) -> ProductionPlan:
+            return solve_scenario_plan(scenario, best_path, conditions)
 
         return solved
 
@@ -257,12 +282,39 @@ def _plan_provider(
         # keeping this option around to compare against.
         targets = replace(scenario.plan, horizon_s=horizon_min * 60.0)
 
-        def fixed(_unavailable: frozenset[ShovelId]) -> ProductionPlan:
+        def fixed(_conditions: PlanConditions) -> ProductionPlan:
             return targets
 
         return fixed
 
     raise typer.BadParameter(f"unknown plan {kind!r}, try: lp, static")
+
+
+def _mean_of(runs: list[Kpis], table: Callable[[Kpis], dict[Any, float]]) -> dict[Any, float]:
+    totals: dict[Any, float] = defaultdict(float)
+    for run in runs:
+        for key, value in table(run).items():
+            totals[key] += value / len(runs)
+    return dict(totals)
+
+
+def _mean_kpis(runs: list[Kpis]) -> Kpis:
+    """A Kpis whose tables hold the average over replicas, for the detail tables."""
+    return replace(
+        runs[0],
+        tonnes_by_dump=_mean_of(runs, lambda run: run.tonnes_by_dump),
+        tonnes_by_route=_mean_of(runs, lambda run: run.tonnes_by_route),
+        shovels=tuple(
+            replace(
+                shovel,
+                loads=round(fmean([run.shovels[index].loads for run in runs])),
+                tonnes=fmean([run.shovels[index].tonnes for run in runs]),
+                engaged_time_s=fmean([run.shovels[index].engaged_time_s for run in runs]),
+                idle_time_s=fmean([run.shovels[index].idle_time_s for run in runs]),
+            )
+            for index, shovel in enumerate(runs[0].shovels)
+        ),
+    )
 
 
 def _report_blends(scenario: Scenario, kpis: Kpis) -> None:
@@ -288,23 +340,25 @@ def _report_blends(scenario: Scenario, kpis: Kpis) -> None:
         )
 
 
-def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, setup: str) -> None:
+def _report(scenario: Scenario, runs: list[Kpis], plan: ProductionPlan, setup: str) -> None:
+    kpis = _mean_kpis(runs)
+
+    def line(label: str, metric: Callable[[Kpis], float], precision: int = 0) -> str:
+        return f"  {label:<16}{spread(runs, metric).format(precision):>14}"
+
     # Plain ASCII only: Windows consoles default to cp1252 and mangle dashes.
     typer.echo(f"scenario {scenario.name} - {kpis.horizon_s / 3600:.1f} h - {setup}")
-    typer.echo(
-        f"  tonnes tipped   {kpis.tonnes_total:>10,.0f} t  ({kpis.tonnes_per_hour:,.0f} t/h)"
-    )
-    typer.echo(
-        f"  in transit      {kpis.tonnes_in_transit:>10,.0f} t  (loaded, not tipped at cut-off)"
-    )
-    typer.echo(f"  cycles          {kpis.cycles:>10}")
-    typer.echo(f"  avg cycle time  {kpis.avg_cycle_time_s / 60:>10.1f} min")
-    typer.echo(f"  truck queueing  {kpis.truck_queue_time_s / 60:>10.1f} min at shovels")
-    typer.echo(f"  dump queueing   {kpis.dump_queue_time_s / 60:>10.1f} min")
-    typer.echo(f"  standby events  {kpis.standby_events:>10}")
-    if kpis.replans or kpis.reassignments:
-        typer.echo(f"  replans         {kpis.replans:>10}")
-        typer.echo(f"  reassignments   {kpis.reassignments:>10}")
+    typer.echo(line("tonnes tipped", lambda k: k.tonnes_total) + " t")
+    typer.echo(line("in transit", lambda k: k.tonnes_in_transit) + " t  (not tipped at cut-off)")
+    typer.echo(line("cycles", lambda k: k.cycles))
+    typer.echo(line("avg cycle time", lambda k: k.avg_cycle_time_s / 60, 1) + " min")
+    typer.echo(line("truck queueing", lambda k: k.truck_queue_time_s / 60, 1) + " min at shovels")
+    typer.echo(line("dump queueing", lambda k: k.dump_queue_time_s / 60, 1) + " min")
+    typer.echo(line("standby events", lambda k: k.standby_events, 1))
+    if kpis.replans or kpis.reassignments or kpis.breakdowns:
+        typer.echo(line("breakdowns", lambda k: k.breakdowns, 1))
+        typer.echo(line("replans", lambda k: k.replans, 1))
+        typer.echo(line("reassignments", lambda k: k.reassignments, 1))
 
     hours = kpis.horizon_s / 3600.0
     typer.echo("\n  route                      tonnes      t/h   plan t/h")
