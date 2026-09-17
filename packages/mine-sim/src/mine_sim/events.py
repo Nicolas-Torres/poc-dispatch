@@ -28,6 +28,7 @@ class Event:
     truck_id: str = ""
     shovel_id: str | None = None
     dump_id: str | None = None
+    zone_id: str | None = None
     payload_t: float = 0.0
     detail: str = ""
 
@@ -51,6 +52,9 @@ class Kpis:
     horizon_s: float
     tonnes_total: float
     tonnes_by_dump: dict[str, float]
+    # Tipped tonnes keyed by (load zone, dump zone): the realised counterpart of
+    # the LP's route flows.
+    tonnes_by_route: dict[tuple[str, str], float]
     cycles: int
     avg_cycle_time_s: float
     truck_queue_time_s: float
@@ -77,6 +81,7 @@ class EventLog:
         truck_id: str = "",
         shovel_id: str | None = None,
         dump_id: str | None = None,
+        zone_id: str | None = None,
         payload_t: float = 0.0,
         detail: str = "",
     ) -> None:
@@ -87,6 +92,7 @@ class EventLog:
                 truck_id=truck_id,
                 shovel_id=shovel_id,
                 dump_id=dump_id,
+                zone_id=zone_id,
                 payload_t=payload_t,
                 detail=detail,
             )
@@ -94,6 +100,7 @@ class EventLog:
 
     def kpis(self, *, horizon_s: float, shovel_ids: list[str]) -> Kpis:
         tonnes_by_dump: dict[str, float] = defaultdict(float)
+        tonnes_by_route: dict[tuple[str, str], float] = defaultdict(float)
         tonnes_by_shovel: dict[str, float] = defaultdict(float)
         loads_by_shovel: dict[str, int] = defaultdict(int)
         engaged_by_shovel: dict[str, float] = defaultdict(float)
@@ -136,13 +143,16 @@ class EventLog:
                 dump_queue_time_s += event.time_s - arrive_dump_at.pop(event.truck_id)
             elif event.kind is EventKind.DUMP_END:
                 assert event.dump_id is not None
+                assert event.zone_id is not None
                 tonnes_by_dump[event.dump_id] += event.payload_t
+                tonnes_by_route[event.zone_id, event.dump_id] += event.payload_t
                 cycle_times_s.append(event.time_s - assigned_at.pop(event.truck_id))
 
         return Kpis(
             horizon_s=horizon_s,
             tonnes_total=sum(tonnes_by_dump.values()),
             tonnes_by_dump=dict(tonnes_by_dump),
+            tonnes_by_route=dict(tonnes_by_route),
             cycles=len(cycle_times_s),
             avg_cycle_time_s=sum(cycle_times_s) / len(cycle_times_s) if cycle_times_s else 0.0,
             truck_queue_time_s=truck_queue_time_s,

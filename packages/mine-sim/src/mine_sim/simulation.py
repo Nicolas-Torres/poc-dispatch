@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import simpy
 from dispatch_engine.best_path import BestPath
 from dispatch_engine.domain.equipment import CycleState, ShovelId, StatusCode, Truck
-from dispatch_engine.domain.mine import DumpZone, LoadZone, NodeId
+from dispatch_engine.domain.mine import NodeId, ZoneId
 from dispatch_engine.domain.snapshot import MineSnapshot, Overrides, ShovelStatus, TruckStatus
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.policy import DispatchPolicy
@@ -34,6 +34,8 @@ class _TruckRuntime:
     free_at_s: float = 0.0
     assigned_shovel: ShovelId | None = None
     arrive_at_shovel_s: float = 0.0
+    origin_zone: ZoneId | None = None
+    assigned_dump: ZoneId | None = None
 
 
 class Simulation:
@@ -89,9 +91,7 @@ class Simulation:
             dump.id: simpy.Resource(self.env, capacity=dump.tipping_bays)
             for dump in scenario.mine.dump_zones.values()
         }
-        self._dump_for_zone = {
-            zone.id: self._nearest_dump(zone) for zone in scenario.mine.load_zones.values()
-        }
+        self._delivered_t: dict[tuple[ZoneId, ZoneId], float] = {}
         self._trucks = {
             truck.id: _TruckRuntime(
                 truck=truck,
@@ -109,16 +109,6 @@ class Simulation:
             self.env.process(self._disruption_process(disruption))
         self.env.run(until=until_s)
         return self.log.kpis(horizon_s=until_s, shovel_ids=list(self.scenario.shovels))
-
-    def _nearest_dump(self, zone: LoadZone) -> DumpZone:
-        """Destination choice stands in for the LP, which picks it per route."""
-        compatible = [
-            dump for dump in self.scenario.mine.dump_zones.values() if dump.accepts(zone.material)
-        ]
-        return min(
-            compatible,
-            key=lambda dump: self.best_path.travel_time_s(zone.node, dump.node, loaded=True),
-        )
 
     def _is_available(self, shovel_id: ShovelId) -> bool:
         return (
@@ -164,10 +154,13 @@ class Simulation:
                         if runtime.assigned_shovel is not None
                         else None
                     ),
+                    origin_zone=runtime.origin_zone,
+                    assigned_dump=runtime.assigned_dump,
                 )
                 for runtime in self._trucks.values()
             },
             overrides=self.overrides,
+            delivered_t=self._delivered_t,
         )
 
     def _disruption_process(self, disruption: Disruption) -> Generator[simpy.Event, None, None]:
@@ -260,19 +253,28 @@ class Simulation:
                     payload_t=truck.payload_t,
                 )
 
-            dump = self._dump_for_zone[zone.id]
-            haul = self.best_path.route(zone.node, dump.node, loaded=True)
+            destination = self.policy.choose_destination(self._snapshot(), truck.id, zone.id)
+            dump = self.scenario.mine.dump_zones[destination.dump_zone_id]
+            haul = destination.route
             runtime.state = CycleState.TRAVEL_LOADED
             # Leaving the shovel puts the truck back into T': it no longer counts
             # towards that shovel's committed haulage, and it will need a new
             # destination once it has tipped.
             runtime.assigned_shovel = None
+            runtime.origin_zone = zone.id
+            runtime.assigned_dump = dump.id
             runtime.free_at_node = dump.node
             runtime.free_at_s = env.now + haul.travel_time_s + dump.dump_time_s
             yield env.timeout(haul.travel_time_s)
 
             runtime.state = CycleState.QUEUE_AT_DUMP
-            self.log.record(env.now, EventKind.ARRIVE_DUMP, truck_id=truck.id, dump_id=dump.id)
+            self.log.record(
+                env.now,
+                EventKind.ARRIVE_DUMP,
+                truck_id=truck.id,
+                dump_id=dump.id,
+                zone_id=zone.id,
+            )
             with self._dump_resources[dump.id].request() as request:
                 yield request
                 runtime.state = CycleState.DUMPING
@@ -283,6 +285,13 @@ class Simulation:
                     EventKind.DUMP_END,
                     truck_id=truck.id,
                     dump_id=dump.id,
+                    zone_id=zone.id,
                     payload_t=truck.payload_t,
+                    detail=destination.reason,
                 )
+
+            route = (zone.id, dump.id)
+            self._delivered_t[route] = self._delivered_t.get(route, 0.0) + truck.payload_t
+            runtime.origin_zone = None
+            runtime.assigned_dump = None
             runtime.free_at_s = env.now

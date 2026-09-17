@@ -116,6 +116,32 @@ def _plan_provider(
     raise typer.BadParameter(f"unknown plan {kind!r}, try: lp, static")
 
 
+def _report_blends(scenario: Scenario, kpis: Kpis) -> None:
+    """What grade actually arrived, against the window the plan was solved for."""
+    if not scenario.plan_inputs.blend_targets:
+        return
+
+    typer.echo("\n  destination   element   delivered   window")
+    for target in scenario.plan_inputs.blend_targets:
+        tonnes = 0.0
+        graded = 0.0
+        for (zone_id, dump_id), route_t in kpis.tonnes_by_route.items():
+            if dump_id != target.dump_zone_id:
+                continue
+            tonnes += route_t
+            graded += route_t * scenario.mine.load_zones[zone_id].material.grades.get(
+                target.element, 0.0
+            )
+        if tonnes == 0.0:
+            continue
+        low = "-" if target.min_grade is None else f"{target.min_grade:.2f}"
+        high = "-" if target.max_grade is None else f"{target.max_grade:.2f}"
+        typer.echo(
+            f"  {target.dump_zone_id:<13} {target.element:<9} {graded / tonnes:>9.3f}"
+            f"   {low} - {high}"
+        )
+
+
 def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, plan_kind: str) -> None:
     # Plain ASCII only: Windows consoles default to cp1252 and mangle dashes.
     typer.echo(f"scenario {scenario.name} - {kpis.horizon_s / 3600:.1f} h - {plan_kind} plan")
@@ -131,11 +157,17 @@ def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, plan_kind: str
         typer.echo(f"  replans         {kpis.replans:>10}")
         typer.echo(f"  reassignments   {kpis.reassignments:>10}")
 
-    typer.echo("\n  destination            tonnes")
-    for dump_id, tonnes in sorted(kpis.tonnes_by_dump.items()):
-        typer.echo(f"  {dump_id:<20} {tonnes:>8,.0f}")
-
     hours = kpis.horizon_s / 3600.0
+    typer.echo("\n  route                      tonnes      t/h   plan t/h")
+    for (zone_id, dump_id), tonnes in sorted(kpis.tonnes_by_route.items()):
+        planned_tph = plan.destination_rates_tph(zone_id).get(dump_id, 0.0)
+        typer.echo(
+            f"  {f'{zone_id} -> {dump_id}':<24} {tonnes:>8,.0f} {tonnes / hours:>8,.0f}"
+            f" {planned_tph:>10,.0f}"
+        )
+
+    _report_blends(scenario, kpis)
+
     typer.echo("\n  shovel   loads    tonnes      t/h   plan t/h   util")
     for shovel in kpis.shovels:
         typer.echo(
