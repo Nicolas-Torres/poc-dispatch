@@ -20,13 +20,17 @@ uv sync
 uv run pytest                                     # toda la suite
 uv run pytest packages/dispatch-engine/tests/test_best_path.py::test_route_minimises_time_not_distance
 uv run ruff check . && uv run ruff format .
+uv run dispatch-cli plan --scenario toy           # etapa 2: flujo por ruta
 uv run dispatch-cli run --scenario toy --hours 2  # corrida punta a punta
 ```
 
-Estado por etapa: 1 (Best Path) implementada, 2 (LP con OR-Tools) **solo interfaz**, 3 (asignación en
-tiempo real) implementada en forma reducida. El detalle de lo construido, las decisiones, las
-simplificaciones y los bugs encontrados está en **`docs/desarrollo/`** (un documento por etapa). Al
-avanzar una etapa, actualizar ahí.
+Las tres etapas están implementadas (la 3 en forma reducida: sin las restricciones operativas de la
+patente). El detalle de lo construido, las decisiones, las simplificaciones y los bugs encontrados
+está en **`docs/desarrollo/`** (un documento por etapa). Al avanzar una etapa, actualizar ahí.
+
+El punto de corte entre etapas es `ProductionPlan` (`required_rate_tph` / `required_haulage_t`): la
+etapa 3 nunca ve el solver, solo esa interfaz. Ahí entra `LpProductionPlan` o `StaticProductionPlan`
+sin tocar la asignación.
 
 ## Qué es este proyecto
 
