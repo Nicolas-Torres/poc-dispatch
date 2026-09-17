@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -11,15 +12,24 @@ from dispatch_engine.policy import DispatchPolicy
 from dispatch_engine.production_plan import ProductionPlan
 from mine_sim.events import Kpis
 from mine_sim.planning import solve_scenario_plan
-from mine_sim.scenario import SCENARIOS, Scenario
+from mine_sim.scenario import (
+    SCENARIOS,
+    Scenario,
+    ScenarioSpec,
+    dump_scenario_spec,
+    load_scenario_spec,
+)
 from mine_sim.simulation import PlanProvider, PolicyFactory, Simulation
+from pydantic import ValidationError
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 PlanOption = Annotated[
     str, typer.Option("--plan", help="Production plan: 'lp' solves stage 2, 'static' uses targets.")
 ]
-ScenarioOption = Annotated[str, typer.Option(help="Scenario to simulate.")]
+ScenarioOption = Annotated[
+    str, typer.Option(help="Built-in scenario name, or the path to a YAML/JSON mine of your own.")
+]
 HorizonOption = Annotated[
     float, typer.Option(help="Window the static plan measures required haulage over.")
 ]
@@ -35,6 +45,19 @@ def list_scenarios() -> None:
     """List the built-in scenarios."""
     for name in SCENARIOS:
         typer.echo(name)
+
+
+@app.command("export-scenario")
+def export_scenario(
+    out: Annotated[Path, typer.Option(help="Where to write the mine definition.")],
+    scenario: ScenarioOption = "toy",
+) -> None:
+    """Write a scenario out as YAML or JSON, to start your own mine from it."""
+    try:
+        dump_scenario_spec(_spec(scenario), out)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    typer.echo(f"wrote {out}")
 
 
 @app.command("plan")
@@ -63,6 +86,9 @@ def run(
     shovel_idle_weight: Annotated[
         float, typer.Option(help="Weight of shovel idle time against truck queueing.")
     ] = 1.0,
+    export_events: Annotated[
+        Path | None, typer.Option(help="Write the cycle event log to this CSV file.")
+    ] = None,
 ) -> None:
     """Run a scenario and report haulage KPIs."""
     built = _scenario(scenario)
@@ -77,11 +103,34 @@ def run(
     kpis = simulation.run(until_s=hours * 3600.0)
     _report(built, kpis, simulation.plan, plan)
 
+    if export_events is not None:
+        simulation.log.to_csv(export_events)
+        typer.echo(f"\nwrote {len(simulation.log.events):,} events to {export_events}")
+
+
+def _spec(name: str) -> ScenarioSpec:
+    """A built-in scenario name, or the path to a mine of your own."""
+    if name in SCENARIOS:
+        return SCENARIOS[name]()
+
+    path = Path(name)
+    if not path.is_file():
+        raise typer.BadParameter(
+            f"{name!r} is neither a built-in scenario ({', '.join(SCENARIOS)}) nor a file"
+        )
+    try:
+        return load_scenario_spec(path)
+    except ValidationError as error:
+        # The raw pydantic dump repeats the whole document back at you; the
+        # messages alone are what tells someone which line to fix.
+        problems = "\n".join(f"  - {issue['msg']}" for issue in error.errors())
+        raise typer.BadParameter(f"{path} is not a valid scenario:\n{problems}") from error
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+
 
 def _scenario(name: str) -> Scenario:
-    if name not in SCENARIOS:
-        raise typer.BadParameter(f"unknown scenario {name!r}, try: {', '.join(SCENARIOS)}")
-    return SCENARIOS[name]().build()
+    return _spec(name).build()
 
 
 def _policy_factory(best_path: BestPath, shovel_idle_weight: float) -> PolicyFactory:

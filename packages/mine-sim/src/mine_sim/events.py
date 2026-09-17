@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 
 
 class EventKind(StrEnum):
@@ -97,6 +99,36 @@ class EventLog:
                 detail=detail,
             )
         )
+
+    def to_csv(self, path: Path) -> None:
+        """Persist the run: the cycle history is where haulage KPIs come from."""
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "time_s",
+                    "kind",
+                    "truck_id",
+                    "shovel_id",
+                    "dump_id",
+                    "zone_id",
+                    "payload_t",
+                    "detail",
+                ]
+            )
+            for event in self.events:
+                writer.writerow(
+                    [
+                        f"{event.time_s:.3f}",
+                        event.kind.value,
+                        event.truck_id,
+                        event.shovel_id or "",
+                        event.dump_id or "",
+                        event.zone_id or "",
+                        f"{event.payload_t:g}",
+                        event.detail,
+                    ]
+                )
 
     def kpis(self, *, horizon_s: float, shovel_ids: list[str]) -> Kpis:
         tonnes_by_dump: dict[str, float] = defaultdict(float)

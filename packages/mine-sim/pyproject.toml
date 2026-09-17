@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "dispatch-engine",
     "pydantic>=2.9",
+    "pyyaml>=6.0",
     "simpy>=4.1",
 ]
 
