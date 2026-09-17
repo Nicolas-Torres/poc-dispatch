@@ -29,7 +29,7 @@ class NeediestShovelPolicy:
     def assign(self, snapshot: MineSnapshot, truck_id: TruckId) -> Assignment | None:
         locked_to = snapshot.overrides.locked.get(truck_id)
         if locked_to is not None:
-            shovel = snapshot.shovels[locked_to]
+            shovel = snapshot.shovels[locked_to].shovel
             return self._build(
                 snapshot, snapshot.trucks[truck_id], shovel, "locked by dispatcher", 0.0
             )
@@ -83,8 +83,8 @@ class NeediestShovelPolicy:
         skipped: set[ShovelId],
     ) -> list[tuple[Shovel, float]]:
         needs = [
-            (shovel, self.plan.required_haulage_t(sid) - committed_t[sid])
-            for sid, shovel in snapshot.shovels.items()
+            (status.shovel, self.plan.required_haulage_t(sid) - committed_t[sid])
+            for sid, status in snapshot.available_shovels().items()
             if sid not in skipped
         ]
         # Shovels above plan stay in the ranking with a negative need: a truck
@@ -99,7 +99,7 @@ class NeediestShovelPolicy:
         snapshot does not carry loading progress — a small pessimism that biases
         the engine away from shovels that just started a load.
         """
-        shovel = snapshot.shovels[shovel_id]
+        shovel = snapshot.shovels[shovel_id].shovel
         arrivals = sorted(
             (snapshot.now_s + (status.eta_to_shovel_s or 0.0), shovel.load_time_s(status.truck))
             for status in snapshot.arrivals(shovel_id)

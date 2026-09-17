@@ -42,6 +42,18 @@ class Overrides:
 
 
 @dataclass(frozen=True, slots=True)
+class ShovelStatus:
+    """A shovel and the status code it is reporting."""
+
+    shovel: Shovel
+    status: StatusCode = StatusCode.OPERATING
+
+    @property
+    def is_available(self) -> bool:
+        return self.status is StatusCode.OPERATING
+
+
+@dataclass(frozen=True, slots=True)
 class MineSnapshot:
     """Immutable view of the mine at the instant a truck asks for a destination.
 
@@ -52,9 +64,17 @@ class MineSnapshot:
 
     now_s: float
     mine: Mine
-    shovels: dict[ShovelId, Shovel]
+    shovels: dict[ShovelId, ShovelStatus]
     trucks: dict[TruckId, TruckStatus]
     overrides: Overrides = field(default_factory=Overrides)
+
+    def available_shovels(self) -> dict[ShovelId, ShovelStatus]:
+        """Shovels that can take a truck: operating and not excluded by hand."""
+        return {
+            shovel_id: status
+            for shovel_id, status in self.shovels.items()
+            if status.is_available and shovel_id not in self.overrides.excluded_shovels
+        }
 
     def arrivals(self, shovel_id: ShovelId) -> list[TruckStatus]:
         """Ta(s): trucks at, heading to, or projected to be dispatched to the shovel."""
@@ -75,7 +95,7 @@ class MineSnapshot:
 
     def candidates_for(self, shovel_id: ShovelId) -> list[TruckStatus]:
         """Tc(s): the subset of T' that may be dispatched to this shovel."""
-        if shovel_id in self.overrides.excluded_shovels:
+        if shovel_id not in self.available_shovels():
             return []
         return [
             t

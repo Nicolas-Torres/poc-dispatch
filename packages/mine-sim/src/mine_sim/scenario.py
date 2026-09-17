@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Literal
 
-from dispatch_engine.domain.equipment import Shovel, ShovelId, Truck, TruckId
+from dispatch_engine.domain.equipment import Shovel, ShovelId, StatusCode, Truck, TruckId
 from dispatch_engine.domain.mine import (
     DumpZone,
     Edge,
@@ -68,6 +69,23 @@ class BlendTargetSpec(BaseModel):
     max_grade: float | None = None
 
 
+class DisruptionSpec(BaseModel):
+    """A scheduled outage: the shovel stops reporting as operating for a while."""
+
+    shovel: str
+    start_min: float = Field(ge=0)
+    duration_min: float = Field(gt=0)
+    status: Literal["down", "delay", "standby"] = "down"
+
+
+@dataclass(frozen=True, slots=True)
+class Disruption:
+    shovel_id: ShovelId
+    start_s: float
+    duration_s: float
+    status: StatusCode
+
+
 class TruckSpec(BaseModel):
     id: str
     payload_t: float = Field(gt=0)
@@ -86,6 +104,7 @@ class Scenario:
     spot_time_s: float
     fleets: tuple[FleetType, ...]
     plan_inputs: PlanInputs
+    disruptions: tuple[Disruption, ...]
 
 
 class ScenarioSpec(BaseModel):
@@ -103,6 +122,7 @@ class ScenarioSpec(BaseModel):
     trucks: list[TruckSpec]
     spot_time_s: float = Field(default=40.0, ge=0)
     blend_targets: list[BlendTargetSpec] = Field(default_factory=list)
+    disruptions: list[DisruptionSpec] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_references(self) -> ScenarioSpec:
@@ -129,6 +149,11 @@ class ScenarioSpec(BaseModel):
                 raise ValueError(
                     f"material {zone.material.name!r} of load zone {zone.id!r} has no dump zone"
                 )
+
+        shovel_ids = {shovel.id for shovel in self.shovels}
+        for disruption in self.disruptions:
+            if disruption.shovel not in shovel_ids:
+                raise ValueError(f"disruption points at unknown shovel {disruption.shovel!r}")
 
         for blend in self.blend_targets:
             if blend.dump_zone not in dumps:
@@ -211,6 +236,15 @@ class ScenarioSpec(BaseModel):
                 targets_tph={shovel.id: shovel.target_rate_tph for shovel in self.shovels}
             ),
             spot_time_s=self.spot_time_s,
+            disruptions=tuple(
+                Disruption(
+                    shovel_id=item.shovel,
+                    start_s=item.start_min * 60.0,
+                    duration_s=item.duration_min * 60.0,
+                    status=StatusCode(item.status),
+                )
+                for item in self.disruptions
+            ),
             fleets=self._fleets(),
             plan_inputs=PlanInputs(
                 values_per_tonne={shovel.id: shovel.value_per_tonne for shovel in self.shovels},
@@ -363,4 +397,20 @@ def toy_mine() -> ScenarioSpec:
     )
 
 
-SCENARIOS = {"toy": toy_mine}
+def toy_mine_with_failure() -> ScenarioSpec:
+    """The same pit, with the high grade shovel down for 40 minutes.
+
+    The blend window needs both ore benches, so losing one forces the plan to
+    stop feeding the crusher altogether and put the fleet on waste until it is
+    back — a change no fixed set of targets would make on its own.
+    """
+    spec = toy_mine().model_dump()
+    spec["name"] = "toy-failure"
+    spec["disruptions"] = [
+        DisruptionSpec(shovel="SH01", start_min=30, duration_min=40).model_dump()
+    ]
+    # Rebuilt through validation so the disruption's references are checked too.
+    return ScenarioSpec.model_validate(spec)
+
+
+SCENARIOS = {"toy": toy_mine, "toy-failure": toy_mine_with_failure}

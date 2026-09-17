@@ -5,12 +5,14 @@ from typing import Annotated
 
 import typer
 from dispatch_engine.best_path import BestPath
+from dispatch_engine.domain.equipment import ShovelId
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
+from dispatch_engine.policy import DispatchPolicy
 from dispatch_engine.production_plan import ProductionPlan
 from mine_sim.events import Kpis
 from mine_sim.planning import solve_scenario_plan
 from mine_sim.scenario import SCENARIOS, Scenario
-from mine_sim.simulation import Simulation
+from mine_sim.simulation import PlanProvider, PolicyFactory, Simulation
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -65,19 +67,15 @@ def run(
     """Run a scenario and report haulage KPIs."""
     built = _scenario(scenario)
     best_path = BestPath(built.mine.network)
-    production_plan = _plan(plan, built, best_path, horizon_min)
 
     simulation = Simulation(
         built,
-        NeediestShovelPolicy(
-            best_path=best_path,
-            plan=production_plan,
-            shovel_idle_weight=shovel_idle_weight,
-        ),
+        _policy_factory(best_path, shovel_idle_weight),
+        plan_provider=_plan_provider(plan, built, best_path, horizon_min),
         best_path=best_path,
     )
     kpis = simulation.run(until_s=hours * 3600.0)
-    _report(built, kpis, production_plan, plan)
+    _report(built, kpis, simulation.plan, plan)
 
 
 def _scenario(name: str) -> Scenario:
@@ -86,11 +84,35 @@ def _scenario(name: str) -> Scenario:
     return SCENARIOS[name]().build()
 
 
-def _plan(kind: str, scenario: Scenario, best_path: BestPath, horizon_min: float) -> ProductionPlan:
+def _policy_factory(best_path: BestPath, shovel_idle_weight: float) -> PolicyFactory:
+    def build(plan: ProductionPlan) -> DispatchPolicy:
+        return NeediestShovelPolicy(
+            best_path=best_path, plan=plan, shovel_idle_weight=shovel_idle_weight
+        )
+
+    return build
+
+
+def _plan_provider(
+    kind: str, scenario: Scenario, best_path: BestPath, horizon_min: float
+) -> PlanProvider:
     if kind == "lp":
-        return solve_scenario_plan(scenario, best_path)
+
+        def solved(unavailable: frozenset[ShovelId]) -> ProductionPlan:
+            return solve_scenario_plan(scenario, best_path, unavailable=unavailable)
+
+        return solved
+
     if kind == "static":
-        return replace(scenario.plan, horizon_s=horizon_min * 60.0)
+        # Fixed targets cannot react to a shovel going down; that is the point of
+        # keeping this option around to compare against.
+        targets = replace(scenario.plan, horizon_s=horizon_min * 60.0)
+
+        def fixed(_unavailable: frozenset[ShovelId]) -> ProductionPlan:
+            return targets
+
+        return fixed
+
     raise typer.BadParameter(f"unknown plan {kind!r}, try: lp, static")
 
 
@@ -105,6 +127,9 @@ def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, plan_kind: str
     typer.echo(f"  truck queueing  {kpis.truck_queue_time_s / 60:>10.1f} min at shovels")
     typer.echo(f"  dump queueing   {kpis.dump_queue_time_s / 60:>10.1f} min")
     typer.echo(f"  standby events  {kpis.standby_events:>10}")
+    if kpis.replans or kpis.reassignments:
+        typer.echo(f"  replans         {kpis.replans:>10}")
+        typer.echo(f"  reassignments   {kpis.reassignments:>10}")
 
     typer.echo("\n  destination            tonnes")
     for dump_id, tonnes in sorted(kpis.tonnes_by_dump.items()):

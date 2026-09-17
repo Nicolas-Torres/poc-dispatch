@@ -11,6 +11,7 @@ problemas aparecieron en el camino.
 | [03 — Asignación en tiempo real](03-asignacion-tiempo-real.md) | Etapa 3: heurística de pala más necesitada |
 | [04 — Simulación](04-simulacion.md) | Gemelo digital con SimPy |
 | [05 — CLI y KPIs](05-cli-y-kpis.md) | Entrypoint, log de eventos e indicadores |
+| [06 — Replanificación reactiva](06-replanificacion.md) | Paradas de pala, re-solución del LP y redespacho |
 
 ## Estado actual
 
@@ -25,14 +26,15 @@ los camiones contra ese plan.
   producción y ventanas de blending.
 - Etapa 3 (asignación en tiempo real) en forma reducida, alimentada por el plan.
 - Simulación de eventos discretos con colas emergentes en palas y descargas.
+- Paradas de pala que disparan la re-solución del LP y el redespacho de camiones.
 - Intervención manual del despachador (fijar camión a pala, excluir equipos).
 
 **Lo que falta**
 
-- Re-resolver el LP cuando cambian las condiciones (hoy se resuelve una sola vez, al inicio).
 - Que el destino de descarga salga del plan y no de la cercanía.
+- Los demás disparadores de replanificación: cambio de material, camión que entra o sale de flota.
 - Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
-- Fallas, demoras, cambios de turno y variabilidad estocástica.
+- Variabilidad estocástica: hoy las paradas son deterministas y programadas.
 - Persistencia del log de eventos.
 
 ## Cómo correrlo
@@ -44,4 +46,5 @@ uv run ruff check . && uv run ruff format --check .
 uv run dispatch-cli plan --scenario toy                        # el plan de producción (LP)
 uv run dispatch-cli run --scenario toy --hours 2               # corrida con plan LP
 uv run dispatch-cli run --scenario toy --hours 2 --plan static # comparación con targets fijos
+uv run dispatch-cli run --scenario toy-failure --hours 2       # con una pala caída 40 min
 ```

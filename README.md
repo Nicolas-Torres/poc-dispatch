@@ -51,6 +51,9 @@ El motor se descompone en las tres etapas que describe la literatura:
 Sobre eso corre el **gemelo digital**: una simulación de eventos discretos donde palas y descargas
 son recursos con capacidad, así que las colas emergen de la contención en vez de estar modeladas.
 
+Las condiciones cambian durante la corrida. Si una pala sale de servicio, el plan se re-resuelve
+sobre las que siguen operativas y los camiones que iban hacia ella se redespachan.
+
 ## Inicio rápido
 
 Requiere [uv](https://docs.astral.sh/uv/) y Python 3.12.
@@ -102,6 +105,26 @@ Se puede comparar contra un plan de tasas fijas con `--plan static`: mueve el mi
 (la flota es el límite en ambos casos) pero entrega 2.640 t al chancador en vez de 3.520 t, porque
 gasta las mismas horas-camión en material que vale menos.
 
+### Qué pasa cuando algo se cae
+
+```bash
+uv run dispatch-cli run --scenario toy-failure --hours 2
+```
+
+Es la misma mina con la pala de alta ley caída 40 minutos. La ventana de mezcla necesita las dos
+leyes, así que mientras falta una no hay combinación posible que caiga dentro del rango: el plan
+**deja de alimentar al chancador** y manda la flota a estéril hasta que la pala vuelve. El camión
+que ya venía en viaje hacia ella se redespacha al llegar al banco.
+
+| | `toy` | `toy-failure` |
+|---|---|---|
+| Al chancador | 3.520 t | 1.760 t |
+| Al botadero | 1.760 t | 2.860 t |
+| Replanificaciones | 0 | 2 |
+
+Es una decisión que ningún conjunto de targets fijos habría tomado solo: sale de la estructura del
+modelo, no de una regla escrita a mano.
+
 ## Estructura
 
 Workspace de uv con tres miembros. La dirección de dependencias es estricta y es lo que mantiene el
@@ -150,13 +173,14 @@ de Conventional Commits; descripción del PR de máximo 6 líneas.
 
 ## Estado
 
-Las tres etapas están implementadas y corren punta a punta. Lo que falta, en orden de importancia:
+Las tres etapas están implementadas y corren punta a punta, y el plan se re-resuelve cuando una pala
+sale de servicio. Lo que falta, en orden de importancia:
 
-- Re-resolver el LP cuando cambian las condiciones (hoy se resuelve una sola vez, al inicio).
 - Que el destino de descarga salga del plan y no de la cercanía, que es lo que permite cumplir el
   blending en la operación y no solo en el papel.
+- Los demás disparadores de replanificación: cambio de material en un banco, camión que entra o sale.
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
-- Fallas, demoras, cambios de turno y variabilidad estocástica.
+- Variabilidad estocástica y fallas de camión; hoy las paradas son deterministas y programadas.
 - Persistir el log de eventos para analizar corridas y comparar políticas.
 
 ## Documentación

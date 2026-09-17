@@ -7,6 +7,7 @@ from enum import StrEnum
 
 class EventKind(StrEnum):
     ASSIGNED = "assigned"
+    REASSIGNED = "reassigned"
     STANDBY = "standby"
     ARRIVE_SHOVEL = "arrive_shovel"
     SPOT_START = "spot_start"
@@ -15,13 +16,16 @@ class EventKind(StrEnum):
     ARRIVE_DUMP = "arrive_dump"
     DUMP_START = "dump_start"
     DUMP_END = "dump_end"
+    SHOVEL_DOWN = "shovel_down"
+    SHOVEL_UP = "shovel_up"
+    REPLAN = "replan"
 
 
 @dataclass(frozen=True, slots=True)
 class Event:
     time_s: float
     kind: EventKind
-    truck_id: str
+    truck_id: str = ""
     shovel_id: str | None = None
     dump_id: str | None = None
     payload_t: float = 0.0
@@ -52,6 +56,8 @@ class Kpis:
     truck_queue_time_s: float
     dump_queue_time_s: float
     standby_events: int
+    reassignments: int
+    replans: int
     shovels: tuple[ShovelKpis, ...]
 
     @property
@@ -67,8 +73,8 @@ class EventLog:
         self,
         time_s: float,
         kind: EventKind,
-        truck_id: str,
         *,
+        truck_id: str = "",
         shovel_id: str | None = None,
         dump_id: str | None = None,
         payload_t: float = 0.0,
@@ -99,10 +105,16 @@ class EventLog:
         truck_queue_time_s = 0.0
         dump_queue_time_s = 0.0
         standby_events = 0
+        reassignments = 0
+        replans = 0
 
         for event in self.events:
             if event.kind is EventKind.ASSIGNED:
                 assigned_at[event.truck_id] = event.time_s
+            elif event.kind is EventKind.REASSIGNED:
+                reassignments += 1
+            elif event.kind is EventKind.REPLAN:
+                replans += 1
             elif event.kind is EventKind.STANDBY:
                 standby_events += 1
             elif event.kind is EventKind.ARRIVE_SHOVEL:
@@ -136,6 +148,8 @@ class EventLog:
             truck_queue_time_s=truck_queue_time_s,
             dump_queue_time_s=dump_queue_time_s,
             standby_events=standby_events,
+            reassignments=reassignments,
+            replans=replans,
             shovels=tuple(
                 ShovelKpis(
                     shovel_id=shovel_id,
