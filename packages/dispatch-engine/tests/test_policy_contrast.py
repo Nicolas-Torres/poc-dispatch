@@ -86,9 +86,10 @@ def test_the_even_baseline_goes_to_whichever_shovel_waited_longest() -> None:
         last_dispatch_s={"SH_NEAR": 600.0, "SH_FAR": 3000.0},
     )
 
-    assert LongestWaitingShovelPolicy(best_path=best_path, plan=PLAN).assign(
-        snapshot, "T1"
-    ).shovel_id == "SH_NEAR"
+    assert (
+        LongestWaitingShovelPolicy(best_path=best_path, plan=PLAN).assign(snapshot, "T1").shovel_id
+        == "SH_NEAR"
+    )
 
 
 def test_the_even_baseline_honours_dispatcher_overrides() -> None:
