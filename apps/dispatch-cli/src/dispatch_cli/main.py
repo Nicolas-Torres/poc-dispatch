@@ -1,15 +1,26 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Annotated
 
 import typer
 from dispatch_engine.best_path import BestPath
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
+from dispatch_engine.production_plan import ProductionPlan
 from mine_sim.events import Kpis
-from mine_sim.scenario import SCENARIOS
+from mine_sim.planning import solve_scenario_plan
+from mine_sim.scenario import SCENARIOS, Scenario
 from mine_sim.simulation import Simulation
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+PlanOption = Annotated[
+    str, typer.Option("--plan", help="Production plan: 'lp' solves stage 2, 'static' uses targets.")
+]
+ScenarioOption = Annotated[str, typer.Option(help="Scenario to simulate.")]
+HorizonOption = Annotated[
+    float, typer.Option(help="Window the static plan measures required haulage over.")
+]
 
 
 @app.callback()
@@ -24,36 +35,68 @@ def list_scenarios() -> None:
         typer.echo(name)
 
 
+@app.command("plan")
+def show_plan(scenario: ScenarioOption = "toy") -> None:
+    """Solve the production plan (stage 2) and print the flow on every route."""
+    built = _scenario(scenario)
+    solved = solve_scenario_plan(built, BestPath(built.mine.network))
+
+    typer.echo("  shovel   zone      destination      t/h    cycle   in flight")
+    for flow in sorted(solved.flows, key=lambda item: item.shovel_id):
+        typer.echo(
+            f"  {flow.shovel_id:<8} {flow.load_zone_id:<9} {flow.dump_zone_id:<14}"
+            f" {flow.rate_tph:>7,.0f} {flow.cycle_time_s / 60:>7.1f}m"
+            f" {flow.rate_tph * flow.cycle_time_s / 3600:>9,.0f} t"
+        )
+    total = sum(flow.rate_tph for flow in solved.flows)
+    typer.echo(f"\n  total {total:,.0f} t/h")
+
+
 @app.command()
 def run(
-    scenario: Annotated[str, typer.Option(help="Scenario to simulate.")] = "toy",
+    scenario: ScenarioOption = "toy",
     hours: Annotated[float, typer.Option(help="Simulated hours to run.")] = 2.0,
-    horizon_min: Annotated[
-        float, typer.Option(help="Window the policy measures required haulage over.")
-    ] = 30.0,
+    plan: PlanOption = "lp",
+    horizon_min: HorizonOption = 30.0,
     shovel_idle_weight: Annotated[
         float, typer.Option(help="Weight of shovel idle time against truck queueing.")
     ] = 1.0,
 ) -> None:
     """Run a scenario and report haulage KPIs."""
-    if scenario not in SCENARIOS:
-        raise typer.BadParameter(f"unknown scenario {scenario!r}, try: {', '.join(SCENARIOS)}")
-
-    built = SCENARIOS[scenario]().build()
+    built = _scenario(scenario)
     best_path = BestPath(built.mine.network)
-    policy = NeediestShovelPolicy(
+    production_plan = _plan(plan, built, best_path, horizon_min)
+
+    simulation = Simulation(
+        built,
+        NeediestShovelPolicy(
+            best_path=best_path,
+            plan=production_plan,
+            shovel_idle_weight=shovel_idle_weight,
+        ),
         best_path=best_path,
-        plan=built.plan,
-        horizon_s=horizon_min * 60.0,
-        shovel_idle_weight=shovel_idle_weight,
     )
-    simulation = Simulation(built, policy, best_path=best_path)
-    _report(built.name, simulation.run(until_s=hours * 3600.0))
+    kpis = simulation.run(until_s=hours * 3600.0)
+    _report(built, kpis, production_plan, plan)
 
 
-def _report(scenario_name: str, kpis: Kpis) -> None:
+def _scenario(name: str) -> Scenario:
+    if name not in SCENARIOS:
+        raise typer.BadParameter(f"unknown scenario {name!r}, try: {', '.join(SCENARIOS)}")
+    return SCENARIOS[name]().build()
+
+
+def _plan(kind: str, scenario: Scenario, best_path: BestPath, horizon_min: float) -> ProductionPlan:
+    if kind == "lp":
+        return solve_scenario_plan(scenario, best_path)
+    if kind == "static":
+        return replace(scenario.plan, horizon_s=horizon_min * 60.0)
+    raise typer.BadParameter(f"unknown plan {kind!r}, try: lp, static")
+
+
+def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, plan_kind: str) -> None:
     # Plain ASCII only: Windows consoles default to cp1252 and mangle dashes.
-    typer.echo(f"scenario {scenario_name} - {kpis.horizon_s / 3600:.1f} h simulated")
+    typer.echo(f"scenario {scenario.name} - {kpis.horizon_s / 3600:.1f} h - {plan_kind} plan")
     typer.echo(
         f"  tonnes moved    {kpis.tonnes_total:>10,.0f} t  ({kpis.tonnes_per_hour:,.0f} t/h)"
     )
@@ -67,10 +110,11 @@ def _report(scenario_name: str, kpis: Kpis) -> None:
     for dump_id, tonnes in sorted(kpis.tonnes_by_dump.items()):
         typer.echo(f"  {dump_id:<20} {tonnes:>8,.0f}")
 
-    typer.echo("\n  shovel   loads    tonnes   engaged   idle    util")
+    hours = kpis.horizon_s / 3600.0
+    typer.echo("\n  shovel   loads    tonnes      t/h   plan t/h   util")
     for shovel in kpis.shovels:
         typer.echo(
             f"  {shovel.shovel_id:<8} {shovel.loads:>5} {shovel.tonnes:>9,.0f}"
-            f" {shovel.engaged_time_s / 60:>8.1f}m {shovel.idle_time_s / 60:>6.1f}m"
+            f" {shovel.tonnes / hours:>8,.0f} {plan.required_rate_tph(shovel.shovel_id):>10,.0f}"
             f" {shovel.utilisation_pct:>6.0f}%"
         )

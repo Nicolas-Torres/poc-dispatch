@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from dispatch_engine.domain.equipment import Shovel, ShovelId, Truck, TruckId
@@ -12,6 +13,7 @@ from dispatch_engine.domain.mine import (
     NodeId,
     RoadNetwork,
 )
+from dispatch_engine.lp import BlendTarget, FleetType, PlanInputs
 from dispatch_engine.production_plan import StaticProductionPlan
 from pydantic import BaseModel, Field, model_validator
 
@@ -41,7 +43,12 @@ class ShovelSpec(BaseModel):
     id: str
     zone: str
     load_rate_tph: float = Field(gt=0)
-    target_rate_tph: float = Field(ge=0)
+    # Only read by StaticProductionPlan; the LP derives its own rates.
+    target_rate_tph: float = Field(default=0.0, ge=0)
+    # Only read by the LP: what a tonne off this shovel is worth, and any
+    # production floor it has to meet (a stripping commitment, typically).
+    value_per_tonne: float = Field(default=1.0, ge=0)
+    min_rate_tph: float = Field(default=0.0, ge=0)
     priority: int = 0
 
 
@@ -51,6 +58,14 @@ class DumpZoneSpec(BaseModel):
     accepts_ore: bool
     tipping_bays: int = Field(default=1, ge=1)
     dump_time_s: float = Field(default=60.0, gt=0)
+    capacity_tph: float | None = Field(default=None, gt=0)
+
+
+class BlendTargetSpec(BaseModel):
+    dump_zone: str
+    element: str
+    min_grade: float | None = None
+    max_grade: float | None = None
 
 
 class TruckSpec(BaseModel):
@@ -69,6 +84,8 @@ class Scenario:
     start_nodes: dict[TruckId, NodeId]
     plan: StaticProductionPlan
     spot_time_s: float
+    fleets: tuple[FleetType, ...]
+    plan_inputs: PlanInputs
 
 
 class ScenarioSpec(BaseModel):
@@ -85,11 +102,13 @@ class ScenarioSpec(BaseModel):
     dump_zones: list[DumpZoneSpec]
     trucks: list[TruckSpec]
     spot_time_s: float = Field(default=40.0, ge=0)
+    blend_targets: list[BlendTargetSpec] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_references(self) -> ScenarioSpec:
         nodes = {node for edge in self.edges for node in (edge.source, edge.target)}
         zones = {zone.id: zone for zone in self.load_zones}
+        dumps = {dump.id for dump in self.dump_zones}
 
         for zone in self.load_zones:
             if zone.node not in nodes:
@@ -109,6 +128,14 @@ class ScenarioSpec(BaseModel):
             if zone.material.is_ore not in ore_accepted:
                 raise ValueError(
                     f"material {zone.material.name!r} of load zone {zone.id!r} has no dump zone"
+                )
+
+        for blend in self.blend_targets:
+            if blend.dump_zone not in dumps:
+                raise ValueError(f"blend target points at unknown dump zone {blend.dump_zone!r}")
+            if blend.min_grade is None and blend.max_grade is None:
+                raise ValueError(
+                    f"blend target on {blend.dump_zone!r} sets neither a floor nor a ceiling"
                 )
         return self
 
@@ -157,6 +184,7 @@ class ScenarioSpec(BaseModel):
                     accepts_ore=dump.accepts_ore,
                     tipping_bays=dump.tipping_bays,
                     dump_time_s=dump.dump_time_s,
+                    capacity_tph=dump.capacity_tph,
                 )
                 for dump in self.dump_zones
             },
@@ -183,6 +211,30 @@ class ScenarioSpec(BaseModel):
                 targets_tph={shovel.id: shovel.target_rate_tph for shovel in self.shovels}
             ),
             spot_time_s=self.spot_time_s,
+            fleets=self._fleets(),
+            plan_inputs=PlanInputs(
+                values_per_tonne={shovel.id: shovel.value_per_tonne for shovel in self.shovels},
+                min_rates_tph={shovel.id: shovel.min_rate_tph for shovel in self.shovels},
+                blend_targets=tuple(
+                    BlendTarget(
+                        dump_zone_id=blend.dump_zone,
+                        element=blend.element,
+                        min_grade=blend.min_grade,
+                        max_grade=blend.max_grade,
+                    )
+                    for blend in self.blend_targets
+                ),
+            ),
+        )
+
+    def _fleets(self) -> tuple[FleetType, ...]:
+        """Trucks grouped by fleet type, which is the unit the LP reasons about."""
+        payloads: dict[str, list[float]] = defaultdict(list)
+        for truck in self.trucks:
+            payloads[truck.fleet_type].append(truck.payload_t)
+        return tuple(
+            FleetType(name=name, trucks=len(group), payload_t=sum(group) / len(group))
+            for name, group in payloads.items()
         )
 
 
@@ -257,13 +309,39 @@ def toy_mine() -> ScenarioSpec:
             ),
         ],
         shovels=[
-            ShovelSpec(id="SH01", zone="zone_n", load_rate_tph=3000, target_rate_tph=1400),
-            ShovelSpec(id="SH02", zone="zone_s", load_rate_tph=2400, target_rate_tph=1000),
-            ShovelSpec(id="SH03", zone="zone_w", load_rate_tph=3600, target_rate_tph=1600),
+            ShovelSpec(
+                id="SH01",
+                zone="zone_n",
+                load_rate_tph=3000,
+                target_rate_tph=1400,
+                value_per_tonne=4.0,
+            ),
+            ShovelSpec(
+                id="SH02",
+                zone="zone_s",
+                load_rate_tph=2400,
+                target_rate_tph=1000,
+                value_per_tonne=3.0,
+            ),
+            ShovelSpec(
+                id="SH03",
+                zone="zone_w",
+                load_rate_tph=3600,
+                target_rate_tph=1600,
+                value_per_tonne=1.0,
+                # Stripping commitment: without a floor the plan would move no
+                # waste at all, since ore is worth more per tonne.
+                min_rate_tph=800,
+            ),
         ],
         dump_zones=[
             DumpZoneSpec(
-                id="crusher", node="crusher", accepts_ore=True, tipping_bays=2, dump_time_s=60
+                id="crusher",
+                node="crusher",
+                accepts_ore=True,
+                tipping_bays=2,
+                dump_time_s=60,
+                capacity_tph=2200,
             ),
             DumpZoneSpec(
                 id="waste_dump",
@@ -276,6 +354,11 @@ def toy_mine() -> ScenarioSpec:
         trucks=[
             TruckSpec(id=f"CAT{index:02d}", payload_t=220, start_node="crusher")
             for index in range(1, 7)
+        ],
+        # Forces the plan to mix both ore benches: neither grade sits inside the
+        # window on its own.
+        blend_targets=[
+            BlendTargetSpec(dump_zone="crusher", element="cu", min_grade=0.6, max_grade=0.8)
         ],
     )
 

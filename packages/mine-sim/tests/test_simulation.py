@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from dispatch_engine.best_path import BestPath
 from dispatch_engine.domain.snapshot import Overrides
+from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
+from mine_sim.planning import solve_scenario_plan
 from mine_sim.scenario import EdgeSpec, LoadZoneSpec, MaterialSpec, ScenarioSpec, toy_mine
 from mine_sim.simulation import Simulation
 from pydantic import ValidationError
@@ -39,6 +42,42 @@ def test_locking_a_truck_pins_it_to_one_shovel() -> None:
         if event.truck_id == "CAT01" and event.shovel_id is not None
     }
     assert assigned == {"SH02"}
+
+
+def test_lp_plan_delivers_more_ore_than_fixed_targets() -> None:
+    # Same fleet, same mine: the LP spends the truck hours on the valuable
+    # material instead of on whichever shovel refills its shortfall fastest.
+    scenario = toy_mine().build()
+    best_path = BestPath(scenario.mine.network)
+    lp_run = Simulation(
+        scenario,
+        NeediestShovelPolicy(best_path=best_path, plan=solve_scenario_plan(scenario, best_path)),
+        best_path=best_path,
+    ).run(until_s=3600.0)
+
+    static_run = Simulation(toy_mine().build()).run(until_s=3600.0)
+
+    assert lp_run.tonnes_by_dump["crusher"] > static_run.tonnes_by_dump["crusher"]
+
+
+def test_lp_plan_keeps_the_crusher_blend_inside_its_window() -> None:
+    scenario = toy_mine().build()
+    best_path = BestPath(scenario.mine.network)
+    plan = solve_scenario_plan(scenario, best_path)
+
+    ore = {"SH01": 0.9, "SH02": 0.5}
+    rates = {shovel_id: plan.required_rate_tph(shovel_id) for shovel_id in ore}
+    blended = sum(rates[s] * grade for s, grade in ore.items()) / sum(rates.values())
+
+    assert 0.6 - 1e-9 <= blended <= 0.8 + 1e-9
+
+
+def test_scenario_rejects_a_blend_target_without_limits() -> None:
+    spec = toy_mine().model_dump()
+    spec["blend_targets"] = [{"dump_zone": "crusher", "element": "cu"}]
+
+    with pytest.raises(ValidationError, match="neither a floor nor a ceiling"):
+        ScenarioSpec.model_validate(spec)
 
 
 def test_scenario_rejects_a_zone_on_an_unknown_node() -> None:
