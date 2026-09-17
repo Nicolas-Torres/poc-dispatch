@@ -100,6 +100,7 @@ class Simulation:
             for dump in scenario.mine.dump_zones.values()
         }
         self._delivered_t: dict[tuple[ZoneId, ZoneId], float] = {}
+        self._last_dispatch_s: dict[ShovelId, float] = {}
         self._trucks = {
             truck.id: _TruckRuntime(
                 truck=truck,
@@ -205,6 +206,7 @@ class Simulation:
             },
             overrides=self.overrides,
             delivered_t=self._delivered_t,
+            last_dispatch_s=self._last_dispatch_s,
         )
 
     def _disruption_process(self, disruption: Disruption) -> Generator[simpy.Event, None, None]:
@@ -294,6 +296,7 @@ class Simulation:
                 detail=assignment.reason,
             )
 
+            self._last_dispatch_s[shovel.id] = env.now
             runtime.state = CycleState.TRAVEL_EMPTY
             runtime.assigned_shovel = shovel.id
             # The ETA the engine sees stays nominal: dispatch plans on expected

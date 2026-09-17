@@ -6,6 +6,7 @@ import pytest
 from dispatch_engine.best_path import BestPath
 from dispatch_engine.domain.snapshot import Overrides
 from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
+from dispatch_engine.policies.longest_waiting_shovel import LongestWaitingShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from mine_sim.events import EventKind, Kpis
 from mine_sim.planning import PlanConditions, solve_scenario_plan
@@ -188,8 +189,12 @@ def test_following_the_plan_beats_the_myopic_baseline_on_value() -> None:
 
     follows_plan = run(NeediestShovelPolicy)
     myopic = run(EarliestShovelPolicy)
+    even = run(LongestWaitingShovelPolicy)
 
-    assert _value(scenario, follows_plan) > _value(scenario, myopic)
+    # Both plan-blind baselines lose, and spreading the fleet evenly beats
+    # chasing the nearest shovel — an even split is closer to the plan than no
+    # opinion at all, but it is still not the plan.
+    assert _value(scenario, follows_plan) > _value(scenario, even) > _value(scenario, myopic)
     assert myopic.truck_queue_time_s < follows_plan.truck_queue_time_s
 
 

@@ -11,6 +11,7 @@ import typer
 from dispatch_engine.best_path import BestPath
 from dispatch_engine.lp import BlendTarget
 from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
+from dispatch_engine.policies.longest_waiting_shovel import LongestWaitingShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.policy import DispatchPolicy
 from dispatch_engine.production_plan import ProductionPlan
@@ -29,12 +30,15 @@ from pydantic import ValidationError
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
-POLICIES = ("neediest", "earliest")
+POLICIES = ("neediest", "earliest", "longest")
 
 PolicyOption = Annotated[
     str,
     typer.Option(
-        help="Assignment strategy: 'neediest' follows the plan, 'earliest' is the myopic baseline."
+        help=(
+            "Assignment strategy: 'neediest' follows the plan; 'earliest' and 'longest' are the "
+            "plan-blind baselines from the literature."
+        )
     ),
 ]
 
@@ -263,6 +267,13 @@ def _policy_factory(kind: str, best_path: BestPath, shovel_idle_weight: float) -
             return EarliestShovelPolicy(best_path=best_path, plan=plan)
 
         return myopic
+
+    if kind == "longest":
+
+        def even(plan: ProductionPlan) -> DispatchPolicy:
+            return LongestWaitingShovelPolicy(best_path=best_path, plan=plan)
+
+        return even
 
     raise typer.BadParameter(f"unknown policy {kind!r}, try: {', '.join(POLICIES)}")
 

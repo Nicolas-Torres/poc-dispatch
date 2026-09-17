@@ -7,6 +7,7 @@ from dispatch_engine.domain.mine import DumpZone, Edge, LoadZone, Material, Mine
 from dispatch_engine.domain.snapshot import MineSnapshot, ShovelStatus, TruckStatus
 from dispatch_engine.lp import LpProductionPlan, RouteFlow
 from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
+from dispatch_engine.policies.longest_waiting_shovel import LongestWaitingShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.production_plan import StaticProductionPlan
 
@@ -64,7 +65,7 @@ def _snapshot(delivered_t: dict[tuple[str, str], float]) -> MineSnapshot:
 
 # Both policies decide destinations the same way, so a comparison between them
 # isolates the shovel decision. Every case below runs against both.
-POLICIES = [NeediestShovelPolicy, EarliestShovelPolicy]
+POLICIES = [NeediestShovelPolicy, EarliestShovelPolicy, LongestWaitingShovelPolicy]
 
 
 def _policy(
