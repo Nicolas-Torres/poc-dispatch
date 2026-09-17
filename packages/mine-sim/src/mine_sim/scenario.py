@@ -54,6 +54,8 @@ class ShovelSpec(BaseModel):
     value_per_tonne: float = Field(default=1.0, ge=0)
     min_rate_tph: float = Field(default=0.0, ge=0)
     priority: int = 0
+    # Shovels are individual assets, so each one carries its own reliability.
+    reliability: ReliabilitySpec | None = None
 
 
 class DumpZoneSpec(BaseModel):
@@ -76,6 +78,45 @@ class BlendTargetSpec(BaseModel):
     # Shrinks the window the plan is solved against, so execution drift still
     # lands inside the spec. Zero means the plan sits right on the limit.
     margin: float = Field(default=0.0, ge=0)
+
+
+class VariabilitySpec(BaseModel):
+    """Dispersion of cycle times, as a coefficient of variation (sigma / mu).
+
+    All zero by default, which reproduces the deterministic twin exactly.
+    """
+
+    load_cv: float = Field(default=0.0, ge=0)
+    travel_cv: float = Field(default=0.0, ge=0)
+    dump_cv: float = Field(default=0.0, ge=0)
+
+    @property
+    def enabled(self) -> bool:
+        return max(self.load_cv, self.travel_cv, self.dump_cv) > 0.0
+
+
+class ReliabilitySpec(BaseModel):
+    """Random breakdowns: mean time between failures and mean time to repair."""
+
+    mtbf_h: float = Field(gt=0)
+    mttr_h: float = Field(gt=0)
+
+    @property
+    def availability(self) -> float:
+        return self.mtbf_h / (self.mtbf_h + self.mttr_h)
+
+
+@dataclass(frozen=True, slots=True)
+class Variability:
+    load_cv: float = 0.0
+    travel_cv: float = 0.0
+    dump_cv: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class Reliability:
+    mtbf_s: float
+    mttr_s: float
 
 
 class DisruptionSpec(BaseModel):
@@ -114,6 +155,9 @@ class Scenario:
     fleets: tuple[FleetType, ...]
     plan_inputs: PlanInputs
     disruptions: tuple[Disruption, ...]
+    variability: Variability
+    truck_reliability: Reliability | None
+    shovel_reliability: dict[ShovelId, Reliability]
 
 
 class ScenarioSpec(BaseModel):
@@ -132,6 +176,9 @@ class ScenarioSpec(BaseModel):
     spot_time_s: float = Field(default=40.0, ge=0)
     blend_targets: list[BlendTargetSpec] = Field(default_factory=list)
     disruptions: list[DisruptionSpec] = Field(default_factory=list)
+    variability: VariabilitySpec = Field(default_factory=VariabilitySpec)
+    # One profile for the whole fleet: the trucks are interchangeable.
+    truck_reliability: ReliabilitySpec | None = None
 
     @model_validator(mode="after")
     def _check_references(self) -> ScenarioSpec:
@@ -263,6 +310,17 @@ class ScenarioSpec(BaseModel):
                 )
                 for item in self.disruptions
             ),
+            variability=Variability(
+                load_cv=self.variability.load_cv,
+                travel_cv=self.variability.travel_cv,
+                dump_cv=self.variability.dump_cv,
+            ),
+            truck_reliability=_reliability(self.truck_reliability),
+            shovel_reliability={
+                shovel.id: reliability
+                for shovel in self.shovels
+                if (reliability := _reliability(shovel.reliability)) is not None
+            },
             fleets=self._fleets(),
             plan_inputs=PlanInputs(
                 values_per_tonne={shovel.id: shovel.value_per_tonne for shovel in self.shovels},
@@ -290,6 +348,12 @@ class ScenarioSpec(BaseModel):
             FleetType(name=name, trucks=len(group), payload_t=sum(group) / len(group))
             for name, group in payloads.items()
         )
+
+
+def _reliability(spec: ReliabilitySpec | None) -> Reliability | None:
+    if spec is None:
+        return None
+    return Reliability(mtbf_s=spec.mtbf_h * 3600.0, mttr_s=spec.mttr_h * 3600.0)
 
 
 def toy_mine() -> ScenarioSpec:
@@ -465,10 +529,27 @@ def toy_mine_with_stockpile() -> ScenarioSpec:
     return ScenarioSpec.model_validate(spec)
 
 
+def toy_mine_variable() -> ScenarioSpec:
+    """The same pit, but the world stops being perfect.
+
+    Cycle times get realistic dispersion and both trucks and shovels break down
+    at random, at roughly 95 % availability each. The nominal times the engine
+    plans with do not change — only what actually happens does.
+    """
+    spec = toy_mine().model_dump()
+    spec["name"] = "toy-variable"
+    spec["variability"] = VariabilitySpec(load_cv=0.15, travel_cv=0.10, dump_cv=0.10).model_dump()
+    spec["truck_reliability"] = ReliabilitySpec(mtbf_h=40, mttr_h=2).model_dump()
+    for shovel in spec["shovels"]:
+        shovel["reliability"] = ReliabilitySpec(mtbf_h=60, mttr_h=3).model_dump()
+    return ScenarioSpec.model_validate(spec)
+
+
 SCENARIOS = {
     "toy": toy_mine,
     "toy-failure": toy_mine_with_failure,
     "toy-stockpile": toy_mine_with_stockpile,
+    "toy-variable": toy_mine_variable,
 }
 
 

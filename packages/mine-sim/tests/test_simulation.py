@@ -8,7 +8,7 @@ from dispatch_engine.domain.snapshot import Overrides
 from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from mine_sim.events import EventKind, Kpis
-from mine_sim.planning import solve_scenario_plan
+from mine_sim.planning import PlanConditions, solve_scenario_plan
 from mine_sim.scenario import (
     EdgeSpec,
     LoadZoneSpec,
@@ -27,9 +27,7 @@ def _lp_simulation(scenario: Scenario) -> Simulation:
     best_path = BestPath(scenario.mine.network)
     return Simulation(
         scenario,
-        plan_provider=lambda unavailable: solve_scenario_plan(
-            scenario, best_path, unavailable=unavailable
-        ),
+        plan_provider=lambda conditions: solve_scenario_plan(scenario, best_path, conditions),
         best_path=best_path,
     )
 
@@ -184,7 +182,7 @@ def test_following_the_plan_beats_the_myopic_baseline_on_value() -> None:
         return Simulation(
             scenario,
             lambda plan: policy_class(best_path=best_path, plan=plan),
-            plan_provider=lambda unavailable: provider(unavailable=unavailable),
+            plan_provider=provider,
             best_path=best_path,
         ).run(until_s=4 * 3600.0)
 
@@ -211,7 +209,9 @@ def test_plan_stops_feeding_the_crusher_when_the_blend_cannot_be_met() -> None:
     # what is left lands inside it, so the plan moves waste instead.
     scenario = toy_mine().build()
     plan = solve_scenario_plan(
-        scenario, BestPath(scenario.mine.network), unavailable=frozenset({"SH01"})
+        scenario,
+        BestPath(scenario.mine.network),
+        PlanConditions(unavailable_shovels=frozenset({"SH01"})),
     )
 
     assert plan.rate_by_dump_tph("crusher") == pytest.approx(0.0)

@@ -20,6 +20,8 @@ class EventKind(StrEnum):
     DUMP_END = "dump_end"
     SHOVEL_DOWN = "shovel_down"
     SHOVEL_UP = "shovel_up"
+    TRUCK_DOWN = "truck_down"
+    TRUCK_UP = "truck_up"
     REPLAN = "replan"
 
 
@@ -67,6 +69,7 @@ class Kpis:
     standby_events: int
     reassignments: int
     replans: int
+    breakdowns: int
     shovels: tuple[ShovelKpis, ...]
 
     @property
@@ -155,6 +158,7 @@ class EventLog:
         standby_events = 0
         reassignments = 0
         replans = 0
+        breakdowns = 0
 
         for event in self.events:
             if event.kind is EventKind.ASSIGNED:
@@ -163,6 +167,10 @@ class EventLog:
                 reassignments += 1
             elif event.kind is EventKind.REPLAN:
                 replans += 1
+            elif event.kind is EventKind.TRUCK_DOWN or (
+                event.kind is EventKind.SHOVEL_DOWN and event.detail == "breakdown"
+            ):
+                breakdowns += 1
             elif event.kind is EventKind.STANDBY:
                 standby_events += 1
             elif event.kind is EventKind.ARRIVE_SHOVEL:
@@ -204,6 +212,7 @@ class EventLog:
             standby_events=standby_events,
             reassignments=reassignments,
             replans=replans,
+            breakdowns=breakdowns,
             shovels=tuple(
                 ShovelKpis(
                     shovel_id=shovel_id,
