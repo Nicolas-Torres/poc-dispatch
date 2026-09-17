@@ -1,0 +1,25 @@
+[project]
+name = "dispatch-web"
+version = "0.1.0"
+description = "Interactive 3D demo of the mine digital twin and its dispatch engine"
+requires-python = ">=3.12"
+dependencies = [
+    "dispatch-engine",
+    "fastapi>=0.115",
+    "mine-sim",
+    "uvicorn>=0.32",
+]
+
+[project.scripts]
+dispatch-demo = "dispatch_web.__main__:main"
+
+[tool.uv.sources]
+dispatch-engine = { workspace = true }
+mine-sim = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dispatch_web"]
