@@ -77,6 +77,24 @@ LP contra 2.640 t con el plan fijo.
 plan, y el excedente lo absorbe SH03 (124 %). Con una flota más grande o camiones más chicos
 respecto del plan, el redondeo pesa menos.
 
+## Dos hallazgos que salieron de correrlo, no de leerlo
+
+**La ejecución responde al plan por escalones, no de forma continua.** El ranking solo usa el *orden*
+de las palas por necesidad, no la distancia entre ellas, así que un cambio de plan que no reordena la
+lista no cambia una sola asignación. Medido con el margen de mezcla sobre `toy`: pasar el plan de ley
+0,800 a 0,770 —un cambio del 30 % en el tonelaje pedido a SH02— dio una corrida **idéntica**, y recién
+a 0,750, cuando SH02 supera a SH03 en el ranking, el comportamiento saltó. Explica buena parte de la
+mala adhesión de SH02 documentada arriba, y sugiere que la elección del par camión/pala debería pesar
+la magnitud de la necesidad y no solo tomar la primera.
+
+**`shovel_idle_weight` es contraproducente cuando la flota es el cuello de botella.** Subirlo de 1 a
+5 sobre `toy` costó 63 % más de cola de camiones (24,8 → 40,5 min), **empeoró** el ocioso total de
+palas (suma de utilización 113 % → 110 %) y empujó la ley de 0,806 a 0,820. No hubo trade-off: hubo
+pérdida pura. Con palas al 20-60 % de utilización el ocioso no lo causa el despacho sino la falta de
+camiones, y forzar la palanca solo concentra la flota en una pala. El comentario original en el
+código decía "subilo para mantener las palas ocupadas" sin esa condición, lo que lo volvía engañoso;
+está corregido.
+
 ## Otras simplificaciones
 
 - **El camión que está cargando se cobra el tiempo de carga completo**, porque el snapshot no lleva

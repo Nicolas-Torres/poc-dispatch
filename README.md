@@ -252,6 +252,8 @@ de importancia:
 
 - Los demás disparadores de replanificación: cambio de material en un banco, camión que entra o sale.
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
+- Que la asignación pese la **magnitud** de la necesidad y no solo el orden de las palas: hoy un
+  cambio de plan que no reordena el ranking no cambia una sola asignación.
 - La otra heurística baseline: "la pala que lleva más tiempo sin recibir camión".
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Variabilidad estocástica y fallas de camión; hoy las paradas son deterministas y programadas.
