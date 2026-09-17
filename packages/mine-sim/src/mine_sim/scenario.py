@@ -474,9 +474,14 @@ def toy_mine() -> ScenarioSpec:
             for index in range(1, 7)
         ],
         # Forces the plan to mix both ore benches: neither grade sits inside the
-        # window on its own.
+        # window on its own. The margin is not slack for drift — it moves the plan
+        # off the ceiling to a split the discrete fleet can actually execute. On
+        # the ceiling the plan asks for 3:1, which leaves SH02 needing 1.2 trucks
+        # out of six; the fleet delivers 5.7:1 and the ore arrives out of spec.
         blend_targets=[
-            BlendTargetSpec(dump_zone="crusher", element="cu", min_grade=0.6, max_grade=0.8)
+            BlendTargetSpec(
+                dump_zone="crusher", element="cu", min_grade=0.6, max_grade=0.8, margin=0.05
+            )
         ],
     )
 

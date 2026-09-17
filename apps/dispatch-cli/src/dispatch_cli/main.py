@@ -357,6 +357,10 @@ def _report(scenario: Scenario, runs: list[Kpis], plan: ProductionPlan, setup: s
     def line(label: str, metric: Callable[[Kpis], float], precision: int = 0) -> str:
         return f"  {label:<16}{spread(runs, metric).format(precision):>14}"
 
+    # Counts read as whole numbers on a single run; averaged over replicas a
+    # fraction is the honest answer.
+    counts = 0 if len(runs) == 1 else 1
+
     # Plain ASCII only: Windows consoles default to cp1252 and mangle dashes.
     typer.echo(f"scenario {scenario.name} - {kpis.horizon_s / 3600:.1f} h - {setup}")
     typer.echo(line("tonnes tipped", lambda k: k.tonnes_total) + " t")
@@ -365,11 +369,11 @@ def _report(scenario: Scenario, runs: list[Kpis], plan: ProductionPlan, setup: s
     typer.echo(line("avg cycle time", lambda k: k.avg_cycle_time_s / 60, 1) + " min")
     typer.echo(line("truck queueing", lambda k: k.truck_queue_time_s / 60, 1) + " min at shovels")
     typer.echo(line("dump queueing", lambda k: k.dump_queue_time_s / 60, 1) + " min")
-    typer.echo(line("standby events", lambda k: k.standby_events, 1))
+    typer.echo(line("standby events", lambda k: k.standby_events, counts))
     if kpis.replans or kpis.reassignments or kpis.breakdowns:
-        typer.echo(line("breakdowns", lambda k: k.breakdowns, 1))
-        typer.echo(line("replans", lambda k: k.replans, 1))
-        typer.echo(line("reassignments", lambda k: k.reassignments, 1))
+        typer.echo(line("breakdowns", lambda k: k.breakdowns, counts))
+        typer.echo(line("replans", lambda k: k.replans, counts))
+        typer.echo(line("reassignments", lambda k: k.reassignments, counts))
 
     hours = kpis.horizon_s / 3600.0
     typer.echo("\n  route                      tonnes      t/h   plan t/h")

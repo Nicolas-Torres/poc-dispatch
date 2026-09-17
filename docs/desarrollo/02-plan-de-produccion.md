@@ -86,6 +86,10 @@ Comparado contra el plan estático, a igual tonelaje total movido (la flota mand
 
 ## El plan se para sobre las restricciones, y eso tiene costo operativo
 
+> Esta sección quedó **parcialmente superada**. La conclusión de que el margen da "holgura contra el
+> desvío" resultó equivocada al medirla en serio: el margen funciona por otro mecanismo, y ahora los
+> escenarios lo traen activado por defecto. Ver [11](11-plan-ejecutable.md).
+
 Un LP que maximiza valor deja su solución **sobre** las restricciones que atan. Cuando una de ellas es
 una ventana de mezcla, el plan sale clavado en el límite: en `toy` la ley planificada da 0,800 contra
 un techo de 0,80. Eso no deja margen alguno — cualquier desvío de ejecución hacia arriba sale de
