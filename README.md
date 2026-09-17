@@ -72,43 +72,48 @@ El plan que resuelve el LP para la mina de ejemplo:
 
 ```
   shovel   zone      destination      t/h    cycle   in flight
-  SH01     zone_n    crusher          1,610    26.3m       704 t
-  SH02     zone_s    crusher            537    28.6m       256 t
+  SH01     zone_n    crusher          1,327    26.3m       581 t
+  SH02     zone_s    crusher            796    28.6m       379 t
   SH03     zone_w    waste_dump         800    27.0m       360 t
 
-  total 2,947 t/h
+  total 2,924 t/h
 ```
 
-La mezcla al chancador da ley 0,80 — el techo exacto de la ventana `[0.6, 0.8]` — y las toneladas en
-vuelo suman 1.320 t, o sea los 6 camiones de 220 t: la restricción de flota queda justo activa.
+Las toneladas en vuelo suman 1.320 t, o sea los 6 camiones de 220 t: la restricción de flota queda
+justo activa. La proporción entre los dos bancos de mineral, 1,67:1, **no** es la que maximizaría el
+valor sobre flujos continuos — es la que una flota de camiones enteros puede ejecutar de verdad. El
+porqué está en [11](docs/desarrollo/11-plan-ejecutable.md), y es el hallazgo menos intuitivo del
+proyecto.
 
 Y la corrida de dos horas sobre esa mina:
 
 ```
-scenario toy - 2.0 h - lp plan
-  tonnes moved         5,280 t  (2,640 t/h)
-  cycles                  24
-  avg cycle time        27.7 min
-  truck queueing        20.0 min at shovels
-  dump queueing          0.0 min
-  standby events           0
+scenario toy - 2.0 h - lp plan, neediest policy
+  tonnes tipped            5,280 t
+  in transit                 220 t  (not tipped at cut-off)
+  cycles                      24
+  avg cycle time            28.0 min
+  truck queueing            21.4 min at shovels
+  dump queueing              0.0 min
+  standby events               0
 
   route                      tonnes      t/h   plan t/h
-  zone_n -> crusher           2,640    1,320      1,610
-  zone_s -> crusher             880      440        537
-  zone_w -> waste_dump        1,760      880        800
+  zone_n -> crusher           2,640    1,320      1,327
+  zone_s -> crusher           1,760      880        796
+  zone_w -> waste_dump          880      440        800
 
   destination   element   delivered   window
-  crusher       cu            0.800   0.60 - 0.80
+  crusher       cu            0.740   0.60 - 0.80
 
   shovel   loads    tonnes      t/h   plan t/h   util
-  SH01        13     2,860    1,430      1,610     55%
-  SH02         4       880      440        537     21%
-  SH03         9     1,980      990        800     32%
+  SH01        13     2,860    1,430      1,327     55%
+  SH02         8     1,760      880        796     41%
+  SH03         4       880      440        800     14%
 ```
 
-La última tabla de mezcla es la que cierra el círculo: el LP promete una ley a la chancadora y ahí se
-ve la que efectivamente llegó.
+La tabla de mezcla es la que cierra el círculo: el LP promete una ley al chancador y ahí se ve la que
+efectivamente llegó — 0,740, dentro de la ventana. Si cayera afuera, la fila lo diría con un
+`OUT OF SPEC`.
 
 Se puede comparar contra un plan de tasas fijas con `--plan static`: mueve el mismo tonelaje total
 (la flota es el límite en ambos casos) pero entrega 2.640 t al chancador en vez de 3.520 t, porque
@@ -142,7 +147,7 @@ uv run dispatch-cli run --scenario toy-stockpile --hours 4
 
 Este escenario agrega un stockpile arriba de la rampa: acarreo mucho más corto que la chancadora,
 pero una tonelada ahí vale menos. Con la chancadora limitada, el plan reparte el banco de alta ley
-entre los dos destinos, y la operación sigue ese reparto — la ley entregada queda en 0,783, dentro de
+entre los dos destinos, y la operación sigue ese reparto — la ley entregada queda en 0,761, dentro de
 la ventana `[0.60, 0.80]`.
 
 Corriendo lo mismo con `--plan static`, que no tiene opinión sobre destinos y cae a elegir el más
@@ -163,9 +168,9 @@ es la decisión de pala.
 ```
   metric                    neediest    earliest
   tonnes moved                11,000      11,000
-  plan value                  29,304      23,804
+  plan value                  29,040      23,804
   truck queueing (min)          43.1        22.6
-  crusher cu                   0.783       0.689
+  crusher cu                   0.761       0.689
     window               0.60 - 0.80
 ```
 
@@ -185,14 +190,15 @@ los ciclos no cambia — solo su dispersión — así que cualquier diferencia e
 
 |  | determinista | con variabilidad |
 |---|---|---|
-| Ventaja en valor del plan sobre la baseline | +22,6 % | **+26,7 %** |
-| Toneladas movidas | 71.280 | 66.726 ± 2.397 |
-| Cola de camiones | 30 min | **145 ± 63 min** |
+| Ventaja en valor del plan sobre la baseline | +31,5 % | **+33,2 %** |
+| Toneladas movidas | 69.960 | 66.946 ± 1.287 |
+| Cola de camiones | 41 min | **84 ± 32 min** |
+| Ley entregada | 0,750 | 0,751 ± 0,003 |
 
 **La ventaja sobrevive y crece.** Y aparecen dos cosas que el gemelo determinista escondía: la
-varianza sola cuesta un 6 % de producción con ciclos de media idéntica, y la cola de camiones casi se
-quintuplica. El fenómeno principal que un dispatch administra prácticamente no existía en el modelo
-sin ruido.
+varianza sola cuesta un 4 % de producción con ciclos de media idéntica, y la cola de camiones se
+duplica. El fenómeno principal que un dispatch administra prácticamente no existía en el modelo sin
+ruido.
 
 ### Tu propia mina
 
@@ -271,8 +277,8 @@ sale de servicio, y los destinos siguen el reparto por ruta que calculó el LP. 
 de importancia:
 
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
-- Margen de mezcla en los escenarios incorporados: el plan se para sobre el límite de ley y la
-  operación lo cruza.
+- Que el LP conozca la granularidad de la flota y no proponga proporciones que exigen fracciones de
+  camión — hoy se compensa a mano con un margen de mezcla, y sería un modelo entero-mixto.
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, pero la lluvia enlentece todos
   los viajes a la vez y son esos días los que marcan el peor caso.

@@ -191,10 +191,11 @@ def test_following_the_plan_beats_the_myopic_baseline_on_value() -> None:
     myopic = run(EarliestShovelPolicy)
     even = run(LongestWaitingShovelPolicy)
 
-    # Both plan-blind baselines lose, and spreading the fleet evenly beats
-    # chasing the nearest shovel — an even split is closer to the plan than no
-    # opinion at all, but it is still not the plan.
-    assert _value(scenario, follows_plan) > _value(scenario, even) > _value(scenario, myopic)
+    # Both plan-blind baselines lose. Their order relative to *each other* is not
+    # asserted: over four hours they land within about a percent, and which one
+    # comes out ahead only settles over a longer run.
+    assert _value(scenario, follows_plan) > _value(scenario, myopic)
+    assert _value(scenario, follows_plan) > _value(scenario, even)
     assert myopic.truck_queue_time_s < follows_plan.truck_queue_time_s
 
 

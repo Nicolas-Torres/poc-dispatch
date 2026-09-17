@@ -16,6 +16,11 @@ problemas aparecieron en el camino.
 | [08 — Minas en archivo](08-escenarios-en-archivo.md) | Escenarios YAML/JSON y log de ciclos en CSV |
 | [09 — Comparación de políticas](09-comparacion-de-politicas.md) | Las baselines de la literatura y cuánto compra el plan |
 | [10 — Variabilidad estocástica](10-variabilidad.md) | Ruido, fallas de equipo y réplicas; ¿sobrevive la ventaja? |
+| [11 — Un plan ejecutable](11-plan-ejecutable.md) | Por qué el plan óptimo entregaba mineral fuera de ley |
+
+> Los números de los documentos 02, 05, 07, 09 y 10 son de cuando se midió cada etapa. El cambio de
+> la [etapa 11](11-plan-ejecutable.md) movió las cifras de los escenarios; el
+> [README del proyecto](../../README.md) tiene las vigentes.
 
 ## Estado actual
 
