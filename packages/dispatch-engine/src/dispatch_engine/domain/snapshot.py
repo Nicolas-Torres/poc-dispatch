@@ -75,6 +75,10 @@ class MineSnapshot:
     delivered_t: dict[tuple[ZoneId, ZoneId], float] = field(default_factory=dict)
     # When each shovel was last sent a truck. Absent means it has not had one.
     last_dispatch_s: dict[ShovelId, float] = field(default_factory=dict)
+    # Tonnes the plan expected this shovel to have dug by now, minus what it
+    # actually dug. Empty means nobody is keeping the ledger, and a policy that
+    # reads it falls back to comparing stocks alone.
+    plan_shortfall_t: dict[ShovelId, float] = field(default_factory=dict)
 
     def waiting_since_s(self, shovel_id: ShovelId) -> float:
         """How long the shovel has gone without being sent a truck."""

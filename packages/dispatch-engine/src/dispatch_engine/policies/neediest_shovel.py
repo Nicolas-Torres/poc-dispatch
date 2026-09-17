@@ -33,6 +33,12 @@ class NeediestShovelPolicy:
     # idle time is not caused by dispatching and raising this just piles trucks
     # into queues at the busiest shovel for no gain.
     shovel_idle_weight: float = 1.0
+    # Weight on the cumulative shortfall against plan. Comparing only the trucks
+    # in flight against the trucks required is proportional control on a stock:
+    # with a discrete fleet the stock deficit settles at an integer allocation
+    # that need not match the planned ratio, and because nothing accumulates the
+    # cumulative shortfall grows without bound. This is the integral term.
+    plan_shortfall_weight: float = 1.0
 
     def assign(self, snapshot: MineSnapshot, truck_id: TruckId) -> Assignment | None:
         locked_to = snapshot.overrides.locked.get(truck_id)
@@ -98,7 +104,12 @@ class NeediestShovelPolicy:
         skipped: set[ShovelId],
     ) -> list[tuple[Shovel, float]]:
         needs = [
-            (status.shovel, self.plan.required_haulage_t(sid) - committed_t[sid])
+            (
+                status.shovel,
+                self.plan.required_haulage_t(sid)
+                - committed_t[sid]
+                + self.plan_shortfall_weight * snapshot.plan_shortfall_t.get(sid, 0.0),
+            )
             for sid, status in snapshot.available_shovels().items()
             if sid not in skipped
         ]
