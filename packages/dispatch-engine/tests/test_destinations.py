@@ -6,6 +6,7 @@ from dispatch_engine.domain.equipment import CycleState, Shovel, StatusCode, Tru
 from dispatch_engine.domain.mine import DumpZone, Edge, LoadZone, Material, Mine, RoadNetwork
 from dispatch_engine.domain.snapshot import MineSnapshot, ShovelStatus, TruckStatus
 from dispatch_engine.lp import LpProductionPlan, RouteFlow
+from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.production_plan import StaticProductionPlan
 
@@ -61,11 +62,20 @@ def _snapshot(delivered_t: dict[tuple[str, str], float]) -> MineSnapshot:
     )
 
 
-def _policy(plan: LpProductionPlan | StaticProductionPlan) -> NeediestShovelPolicy:
-    return NeediestShovelPolicy(best_path=BestPath(_mine().network), plan=plan)
+# Both policies decide destinations the same way, so a comparison between them
+# isolates the shovel decision. Every case below runs against both.
+POLICIES = [NeediestShovelPolicy, EarliestShovelPolicy]
 
 
-def test_destinations_track_the_planned_split() -> None:
+def _policy(
+    plan: LpProductionPlan | StaticProductionPlan,
+    policy_class: type = NeediestShovelPolicy,
+) -> NeediestShovelPolicy | EarliestShovelPolicy:
+    return policy_class(best_path=BestPath(_mine().network), plan=plan)
+
+
+@pytest.mark.parametrize("policy_class", POLICIES)
+def test_destinations_track_the_planned_split(policy_class: type) -> None:
     # Three quarters of the zone's output is planned for the plant.
     policy = _policy(
         LpProductionPlan(
@@ -73,7 +83,8 @@ def test_destinations_track_the_planned_split() -> None:
                 RouteFlow("SH", "zone_a", "plant", "default", cycle_time_s=600, rate_tph=750),
                 RouteFlow("SH", "zone_a", "tip", "default", cycle_time_s=300, rate_tph=250),
             )
-        )
+        ),
+        policy_class,
     )
 
     delivered_t: dict[tuple[str, str], float] = {}
@@ -112,8 +123,9 @@ def test_loads_in_flight_count_towards_the_split() -> None:
     assert policy.choose_destination(snapshot, "T1", "zone_a").dump_zone_id == "tip"
 
 
-def test_falls_back_to_the_nearest_destination_without_a_route_plan() -> None:
-    policy = _policy(StaticProductionPlan(targets_tph={"SH": 1000.0}))
+@pytest.mark.parametrize("policy_class", POLICIES)
+def test_falls_back_to_the_nearest_destination_without_a_route_plan(policy_class: type) -> None:
+    policy = _policy(StaticProductionPlan(targets_tph={"SH": 1000.0}), policy_class)
 
     destination = policy.choose_destination(_snapshot({}), "T1", "zone_a")
 
