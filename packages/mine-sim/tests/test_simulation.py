@@ -92,10 +92,16 @@ def test_a_margin_wider_than_the_window_is_rejected() -> None:
 def test_ore_and_waste_reach_their_own_destinations() -> None:
     kpis = Simulation(toy_mine().build()).run(until_s=3600.0)
 
-    ore_shovels = {"SH01", "SH02"}
-    ore_tonnes = sum(shovel.tonnes for shovel in kpis.shovels if shovel.shovel_id in ore_shovels)
+    # Asserted over routes rather than by comparing shovel and dump totals: those
+    # two differ by whatever is still riding at the cut-off, which makes the
+    # comparison depend on where the horizon happens to fall.
+    ore_zones = {"zone_n", "zone_s"}
+    destinations = {
+        zone_id: dump_id for (zone_id, dump_id), tonnes in kpis.tonnes_by_route.items() if tonnes
+    }
 
-    assert kpis.tonnes_by_dump["crusher"] == pytest.approx(ore_tonnes)
+    assert destinations == {"zone_n": "crusher", "zone_s": "crusher", "zone_w": "waste_dump"}
+    assert all(destinations[zone] == "crusher" for zone in ore_zones)
 
 
 def test_locking_a_truck_pins_it_to_one_shovel() -> None:
@@ -115,10 +121,12 @@ def test_locking_a_truck_pins_it_to_one_shovel() -> None:
 def test_lp_plan_delivers_more_ore_than_fixed_targets() -> None:
     # Same fleet, same mine: the LP spends the truck hours on the valuable
     # material instead of on whichever shovel refills its shortfall fastest.
+    # Over a full shift: an hour is barely a dozen cycles, too few for the split
+    # to settle.
     scenario = toy_mine().build()
-    lp_run = _lp_simulation(scenario).run(until_s=3600.0)
+    lp_run = _lp_simulation(scenario).run(until_s=4 * 3600.0)
 
-    static_run = Simulation(toy_mine().build()).run(until_s=3600.0)
+    static_run = Simulation(toy_mine().build()).run(until_s=4 * 3600.0)
 
     assert lp_run.tonnes_by_dump["crusher"] > static_run.tonnes_by_dump["crusher"]
 
