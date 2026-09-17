@@ -36,6 +36,9 @@ class PlanInputs:
 
     # c_r of the patent formulation: what a tonne off this shovel is worth.
     values_per_tonne: dict[ShovelId, float] = field(default_factory=dict)
+    # Multiplier on that value depending on where the tonne is tipped: the same
+    # ore is worth less on a stockpile than fed through the crusher.
+    dump_values_per_tonne: dict[ZoneId, float] = field(default_factory=dict)
     # Production floors, e.g. the stripping commitment on a waste shovel.
     min_rates_tph: dict[ShovelId, float] = field(default_factory=dict)
     blend_targets: tuple[BlendTarget, ...] = ()
@@ -74,6 +77,13 @@ class LpProductionPlan:
 
     def rate_by_dump_tph(self, dump_zone_id: ZoneId) -> float:
         return sum(flow.rate_tph for flow in self.flows if flow.dump_zone_id == dump_zone_id)
+
+    def destination_rates_tph(self, load_zone_id: ZoneId) -> dict[ZoneId, float]:
+        rates: dict[ZoneId, float] = {}
+        for flow in self.flows:
+            if flow.load_zone_id == load_zone_id:
+                rates[flow.dump_zone_id] = rates.get(flow.dump_zone_id, 0.0) + flow.rate_tph
+        return rates
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,7 +136,10 @@ def _candidates(
                         shovel_hours_per_tonne=(spot_time_s + load_time_s) / tonne_hours,
                         bay_hours_per_tonne=dump.dump_time_s / tonne_hours,
                         truck_hours_per_tonne=cycle_time_s / tonne_hours,
-                        value_per_tonne=inputs.values_per_tonne.get(shovel.id, 1.0),
+                        value_per_tonne=(
+                            inputs.values_per_tonne.get(shovel.id, 1.0)
+                            * inputs.dump_values_per_tonne.get(dump.id, 1.0)
+                        ),
                     )
                 )
     return candidates

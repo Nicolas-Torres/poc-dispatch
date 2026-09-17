@@ -22,3 +22,13 @@ class Assignment:
     route: Route
     reason: str
     penalty_s: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class Destination:
+    """Where a loaded truck tips, and the haul that gets it there."""
+
+    truck_id: TruckId
+    dump_zone_id: ZoneId
+    route: Route
+    reason: str
