@@ -18,7 +18,7 @@ problemas aparecieron en el camino.
 | [10 — Variabilidad estocástica](10-variabilidad.md) | Ruido, fallas de equipo y réplicas; ¿sobrevive la ventaja? |
 | [11 — Un plan ejecutable](11-plan-ejecutable.md) | Por qué el plan óptimo entregaba mineral fuera de ley |
 | [12 — La demo visual 3D](12-demo-visual.md) | Evaluación de tecnología, Three.js sobre FastAPI y los hallazgos |
-| [13 — Seguimiento del plan](13-seguimiento-del-plan.md) | La deriva sin techo y la capacidad de destino que nadie hacia cumplir |
+| [13 — Seguimiento del plan](13-seguimiento-del-plan.md) | La deriva sin techo, la capacidad de destino que nadie hacia cumplir, y dos hipotesis descartadas |
 
 > Los números de los documentos 02 a 12 son de cuando se midió cada etapa. La
 > [etapa 13](13-seguimiento-del-plan.md) movió las cifras de todos los escenarios —el gemelo pasó a
@@ -55,11 +55,9 @@ los camiones contra ese plan.
 
 **Lo que falta**
 
-- Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan. Ahora es
-  medible: las colas en descarga existen desde la etapa 13.
-- Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, y la lluvia enlentece todo a la
-  vez.
+  vez. Es el pendiente con más recorrido.
+- Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
 
 ## Cómo correrlo
 

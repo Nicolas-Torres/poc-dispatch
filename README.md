@@ -292,11 +292,9 @@ Las tres etapas están implementadas y corren punta a punta, el plan se re-resue
 sale de servicio, y los destinos siguen el reparto por ruta que calculó el LP. Lo que falta, en orden
 de importancia:
 
-- Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan. Desde que el
-  gemelo hace cumplir la capacidad de los destinos, esas colas existen y el efecto es medible.
-- Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, pero la lluvia enlentece todos
   los viajes a la vez y son esos días los que marcan el peor caso.
+- Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 
 ## Documentación
 

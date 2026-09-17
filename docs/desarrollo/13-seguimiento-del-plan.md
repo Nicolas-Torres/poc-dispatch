@@ -136,9 +136,8 @@ proyecto salió más fuerte, no más débil.**
 Seguir el plan no solo entrega mejor ley en promedio: entrega **50 veces menos dispersión** en la ley.
 Para una planta concentradora esa varianza es el problema, no la media.
 
-**Cola en la descarga**: pasa de 0,0 min —siempre, en todos los escenarios— a 202,1 min en `toy` a
-4 h. El KPI existía pero nada podía producirlo. Esto desbloquea el pendiente de *"que la decisión de
-destino mire la cola en la descarga"*, que hasta ahora era imposible de demostrar.
+**Cola en la descarga**: pasa de 0,0 min —siempre, en todos los escenarios— a 75,5 min en `toy` a
+4 h y 181,2 min en `toy-stockpile` a 8 h. El KPI existía pero nada podía producirlo.
 
 ## Sobre el margen de mezcla
 
@@ -172,10 +171,46 @@ Los tests nuevos cubren lo que ninguna suite verde habría detectado antes: que 
 80 % del plan **a ningún horizonte**, que la adhesión no decaiga al alargar el turno, que un destino
 nunca reciba por encima de su capacidad nominal, y que una parada de pala no genere deuda.
 
+## Intento descartado: que el destino mire la cola
+
+Con colas en la descarga por primera vez, el siguiente pendiente de la lista —*"que la decisión de
+destino mire la cola, no solo la adhesión al plan"*— pasó a ser medible. Se implementó: un descuento
+al puntaje de cada destino por las toneladas que perdería mientras el camión hace fila, expuesto como
+`dump_queue_weight`, con peso 0 reproduciendo el comportamiento anterior.
+
+**No funcionó**, y se revirtió. Barriendo el peso sobre `toy-stockpile`:
+
+| peso | t (8 h) | valor | cola descarga | ley |
+|---|---|---|---|---|
+| 0.00 | 21.560 | 56.364 | 181,2 min | 0.758 |
+| 0.50 | 21.560 | 56.364 | 182,6 min | 0.758 |
+| 1.00 | 21.120 | 55.176 | **229,1 min** | 0.764 |
+| 2.00 | 21.120 | 55.484 | 245,5 min | 0.764 |
+
+A 4 h no cambia **nada** a ningún peso, y a 8 h empeora las tres cosas a la vez: menos tonelaje,
+menos valor y *más* cola, que es lo que pretendía reducir.
+
+La razón resultó limpia, y es lo que hace que valga la pena anotarla. El plan del LP para
+`toy-stockpile` reparte al chancador **exactamente 1.400,0 t/h contra una capacidad de 1.400,0 t/h**:
+el LP ya conocía el cap y repartió para llenarlo. La cola que se forma ahí no es un síntoma de mala
+asignación, es la irregularidad de las llegadas alrededor de un destino saturado a propósito.
+Desviar un camión al stockpile para esquivarla significa **des-alimentar el chancador**, que es
+precisamente el intercambio que el LP ya evaluó y descartó.
+
+**La cola en un destino capado no lleva información que el plan no haya usado ya. Reaccionar a ella
+es contar dos veces la misma restricción.** Es el mismo error de fondo que la ponderación por
+magnitud de la [etapa 09](09-comparacion-de-politicas.md): meter en la etapa 3 una corrección que la
+etapa 2 ya había hecho mejor.
+
+Dónde sí tendría sentido: un destino **sin** capacidad declarada donde la cola surge de las bahías
+—varios camiones volcando a la vez— porque eso el LP no lo modela. Ninguno de los escenarios actuales
+lo ejercita.
+
 ## Pendiente que esto deja abierto
 
 - **Reconsiderar el modelo entero-mixto por otra razón.** Se descartó porque los camiones no están
   dedicados a rutas. Si alguna vez se modelan restricciones que sí son enteras (cuántas palas operar,
   qué destinos abrir), vuelve a tener sentido.
-- **Que la decisión de destino mire la cola**, ahora que las colas existen.
-- **Correlación entre eventos** (la lluvia enlentece todos los viajes a la vez).
+- **Correlación entre eventos** (la lluvia enlentece todos los viajes a la vez), que es el pendiente
+  que queda con más recorrido.
+- **Contención de bahías en un destino sin cap**, el único caso donde mirar la cola podría aportar.
