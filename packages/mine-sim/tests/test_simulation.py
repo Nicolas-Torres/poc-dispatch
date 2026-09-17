@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from functools import partial
+
 import pytest
 from dispatch_engine.best_path import BestPath
 from dispatch_engine.domain.snapshot import Overrides
-from mine_sim.events import EventKind
+from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
+from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
+from mine_sim.events import EventKind, Kpis
 from mine_sim.planning import solve_scenario_plan
 from mine_sim.scenario import (
     EdgeSpec,
@@ -114,6 +118,40 @@ def test_without_a_route_plan_every_tonne_takes_the_shortest_haul() -> None:
 
     assert kpis.tonnes_by_dump.get("crusher", 0.0) == 0.0
     assert kpis.tonnes_by_dump["stockpile"] > 0
+
+
+def test_following_the_plan_beats_the_myopic_baseline_on_value() -> None:
+    # Same mine, same fleet, same destination rule: only the shovel decision
+    # differs. The baseline queues less and still earns less, which is the whole
+    # argument for the two-stage engine.
+    scenario = toy_mine_with_stockpile().build()
+    best_path = BestPath(scenario.mine.network)
+    provider = partial(solve_scenario_plan, scenario, best_path)
+
+    def run(policy_class: type) -> Kpis:
+        return Simulation(
+            scenario,
+            lambda plan: policy_class(best_path=best_path, plan=plan),
+            plan_provider=lambda unavailable: provider(unavailable=unavailable),
+            best_path=best_path,
+        ).run(until_s=4 * 3600.0)
+
+    follows_plan = run(NeediestShovelPolicy)
+    myopic = run(EarliestShovelPolicy)
+
+    assert _value(scenario, follows_plan) > _value(scenario, myopic)
+    assert myopic.truck_queue_time_s < follows_plan.truck_queue_time_s
+
+
+def _value(scenario: Scenario, kpis: Kpis) -> float:
+    shovel_by_zone = {shovel.zone: shovel_id for shovel_id, shovel in scenario.shovels.items()}
+    inputs = scenario.plan_inputs
+    return sum(
+        tonnes
+        * inputs.values_per_tonne.get(shovel_by_zone[zone_id], 1.0)
+        * inputs.dump_values_per_tonne.get(dump_id, 1.0)
+        for (zone_id, dump_id), tonnes in kpis.tonnes_by_route.items()
+    )
 
 
 def test_plan_stops_feeding_the_crusher_when_the_blend_cannot_be_met() -> None:
