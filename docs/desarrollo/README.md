@@ -12,6 +12,7 @@ problemas aparecieron en el camino.
 | [04 — Simulación](04-simulacion.md) | Gemelo digital con SimPy |
 | [05 — CLI y KPIs](05-cli-y-kpis.md) | Entrypoint, log de eventos e indicadores |
 | [06 — Replanificación reactiva](06-replanificacion.md) | Paradas de pala, re-solución del LP y redespacho |
+| [07 — Destinos que salen del plan](07-destinos-planificados.md) | Reparto de destinos por ruta y ley entregada |
 
 ## Estado actual
 
@@ -27,12 +28,14 @@ los camiones contra ese plan.
 - Etapa 3 (asignación en tiempo real) en forma reducida, alimentada por el plan.
 - Simulación de eventos discretos con colas emergentes en palas y descargas.
 - Paradas de pala que disparan la re-solución del LP y el redespacho de camiones.
+- Destinos de descarga elegidos siguiendo el reparto por ruta del plan, con la ley entregada medida
+  contra la ventana de mezcla.
 - Intervención manual del despachador (fijar camión a pala, excluir equipos).
 
 **Lo que falta**
 
-- Que el destino de descarga salga del plan y no de la cercanía.
 - Los demás disparadores de replanificación: cambio de material, camión que entra o sale de flota.
+- Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
 - Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
 - Variabilidad estocástica: hoy las paradas son deterministas y programadas.
 - Persistencia del log de eventos.
@@ -47,4 +50,5 @@ uv run dispatch-cli plan --scenario toy                        # el plan de prod
 uv run dispatch-cli run --scenario toy --hours 2               # corrida con plan LP
 uv run dispatch-cli run --scenario toy --hours 2 --plan static # comparación con targets fijos
 uv run dispatch-cli run --scenario toy-failure --hours 2       # con una pala caída 40 min
+uv run dispatch-cli run --scenario toy-stockpile --hours 4     # dos destinos para el mineral
 ```

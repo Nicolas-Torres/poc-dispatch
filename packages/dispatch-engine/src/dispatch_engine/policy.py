@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from dispatch_engine.domain.assignment import Assignment
+from dispatch_engine.domain.assignment import Assignment, Destination
 from dispatch_engine.domain.equipment import TruckId
+from dispatch_engine.domain.mine import ZoneId
 from dispatch_engine.domain.snapshot import MineSnapshot
 
 
@@ -15,5 +16,15 @@ class DispatchPolicy(Protocol):
     """
 
     def assign(self, snapshot: MineSnapshot, truck_id: TruckId) -> Assignment | None:
-        """Destination for `truck_id`, or None when no shovel can take it."""
+        """Shovel for `truck_id`, or None when none can take it."""
+        ...
+
+    def choose_destination(
+        self, snapshot: MineSnapshot, truck_id: TruckId, load_zone_id: ZoneId
+    ) -> Destination:
+        """Where the truck tips what it just loaded.
+
+        A route in DISPATCH terms is load zone and dump zone together, so the
+        same policy decides both legs.
+        """
         ...

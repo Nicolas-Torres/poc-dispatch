@@ -46,7 +46,9 @@ El motor se descompone en las tres etapas que describe la literatura:
 3. **La asignación en tiempo real** se dispara cuando un camión queda libre: compara lo comprometido
    contra lo que pide el plan, ordena las palas por necesidad y elige el par camión/pala de menor
    tiempo ocioso total. Es la forma "m camiones para 1 pala" de la literatura: hay lookahead sobre
-   varios camiones, pero solo se confirma la asignación del que preguntó.
+   varios camiones, pero solo se confirma la asignación del que preguntó. Al terminar de cargar, la
+   misma política elige el destino siguiendo el reparto por ruta que calculó el LP — en DISPATCH una
+   ruta es zona de carga y zona de descarga juntas.
 
 Sobre eso corre el **gemelo digital**: una simulación de eventos discretos donde palas y descargas
 son recursos con capacidad, así que las colas emergen de la contención en vez de estar modeladas.
@@ -91,15 +93,22 @@ scenario toy - 2.0 h - lp plan
   dump queueing          0.0 min
   standby events           0
 
-  destination            tonnes
-  crusher                 3,520
-  waste_dump              1,760
+  route                      tonnes      t/h   plan t/h
+  zone_n -> crusher           2,640    1,320      1,610
+  zone_s -> crusher             880      440        537
+  zone_w -> waste_dump        1,760      880        800
+
+  destination   element   delivered   window
+  crusher       cu            0.800   0.60 - 0.80
 
   shovel   loads    tonnes      t/h   plan t/h   util
   SH01        13     2,860    1,430      1,610     55%
   SH02         4       880      440        537     21%
   SH03         9     1,980      990        800     32%
 ```
+
+La última tabla de mezcla es la que cierra el círculo: el LP promete una ley a la chancadora y ahí se
+ve la que efectivamente llegó.
 
 Se puede comparar contra un plan de tasas fijas con `--plan static`: mueve el mismo tonelaje total
 (la flota es el límite en ambos casos) pero entrega 2.640 t al chancador en vez de 3.520 t, porque
@@ -124,6 +133,21 @@ que ya venía en viaje hacia ella se redespacha al llegar al banco.
 
 Es una decisión que ningún conjunto de targets fijos habría tomado solo: sale de la estructura del
 modelo, no de una regla escrita a mano.
+
+### Por qué el destino tiene que salir del plan
+
+```bash
+uv run dispatch-cli run --scenario toy-stockpile --hours 4
+```
+
+Este escenario agrega un stockpile arriba de la rampa: acarreo mucho más corto que la chancadora,
+pero una tonelada ahí vale menos. Con la chancadora limitada, el plan reparte el banco de alta ley
+entre los dos destinos, y la operación sigue ese reparto — la ley entregada queda en 0,783, dentro de
+la ventana `[0.60, 0.80]`.
+
+Corriendo lo mismo con `--plan static`, que no tiene opinión sobre destinos y cae a elegir el más
+cercano, **todo el mineral termina en el stockpile y la planta queda en cero**. Elegir el destino por
+cercanía no es una aproximación algo peor: rompe el objetivo del plan.
 
 ## Estructura
 
@@ -173,12 +197,12 @@ de Conventional Commits; descripción del PR de máximo 6 líneas.
 
 ## Estado
 
-Las tres etapas están implementadas y corren punta a punta, y el plan se re-resuelve cuando una pala
-sale de servicio. Lo que falta, en orden de importancia:
+Las tres etapas están implementadas y corren punta a punta, el plan se re-resuelve cuando una pala
+sale de servicio, y los destinos siguen el reparto por ruta que calculó el LP. Lo que falta, en orden
+de importancia:
 
-- Que el destino de descarga salga del plan y no de la cercanía, que es lo que permite cumplir el
-  blending en la operación y no solo en el papel.
 - Los demás disparadores de replanificación: cambio de material en un banco, camión que entra o sale.
+- Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Variabilidad estocástica y fallas de camión; hoy las paradas son deterministas y programadas.
 - Persistir el log de eventos para analizar corridas y comparar políticas.

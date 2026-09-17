@@ -52,9 +52,6 @@ medio construir. Se cambió a construir `BestPath` y la política primero y pasa
 
 ## Simplificaciones
 
-- **El destino de descarga se elige por cercanía**: la descarga compatible más próxima en tiempo
-  cargado. En DISPATCH real lo decide el LP, porque el destino forma parte de la definición de ruta
-  (y es lo que permite hacer blending). Ver [02](02-plan-de-produccion.md).
 - **`free_at_s` de un camión viajando cargado estima llegada + tiempo de descarga**, sin considerar
   una eventual cola en la descarga. Con las descargas holgadas del escenario de juguete el error es
   nulo; con una chancadora saturada sería optimista.

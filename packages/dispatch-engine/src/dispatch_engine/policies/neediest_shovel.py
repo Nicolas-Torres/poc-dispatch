@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dispatch_engine.best_path import BestPath
-from dispatch_engine.domain.assignment import Assignment
+from dispatch_engine.domain.assignment import Assignment, Destination
 from dispatch_engine.domain.equipment import Shovel, ShovelId, TruckId
+from dispatch_engine.domain.mine import DumpZone, LoadZone, ZoneId
 from dispatch_engine.domain.snapshot import MineSnapshot, TruckStatus
 from dispatch_engine.production_plan import ProductionPlan
 
@@ -75,6 +76,56 @@ class NeediestShovelPolicy:
                 chosen.truck
             )
             pending.discard(chosen.truck.id)
+
+    def choose_destination(
+        self, snapshot: MineSnapshot, truck_id: TruckId, load_zone_id: ZoneId
+    ) -> Destination:
+        zone = snapshot.mine.load_zones[load_zone_id]
+        compatible = [
+            dump for dump in snapshot.mine.dump_zones.values() if dump.accepts(zone.material)
+        ]
+        planned_tph = self.plan.destination_rates_tph(load_zone_id)
+        candidates = [dump for dump in compatible if planned_tph.get(dump.id, 0.0) > 0.0]
+
+        if not candidates:
+            nearest = min(
+                compatible,
+                key=lambda dump: self.best_path.travel_time_s(zone.node, dump.node, loaded=True),
+            )
+            return self._destination(snapshot, truck_id, zone, nearest, "nearest destination")
+
+        # Send this load wherever the shift is furthest behind the split the plan
+        # asked for. Chasing the running total, rather than the instantaneous
+        # one, is what keeps a blend on target over a shift.
+        payload_t = snapshot.trucks[truck_id].truck.payload_t
+        total_planned_tph = sum(planned_tph[dump.id] for dump in candidates)
+        delivered_t = {
+            dump.id: snapshot.committed_to_route(load_zone_id, dump.id) for dump in candidates
+        }
+        total_delivered_t = sum(delivered_t.values()) + payload_t
+
+        def shortfall_t(dump: DumpZone) -> tuple[float, float]:
+            share = planned_tph[dump.id] / total_planned_tph
+            return (share * total_delivered_t - delivered_t[dump.id], planned_tph[dump.id])
+
+        chosen = max(candidates, key=shortfall_t)
+        share = planned_tph[chosen.id] / total_planned_tph
+        return self._destination(snapshot, truck_id, zone, chosen, f"{share:.0%} of plan share")
+
+    def _destination(
+        self,
+        snapshot: MineSnapshot,
+        truck_id: TruckId,
+        zone: LoadZone,
+        dump: DumpZone,
+        reason: str,
+    ) -> Destination:
+        return Destination(
+            truck_id=truck_id,
+            dump_zone_id=dump.id,
+            route=self.best_path.route(zone.node, dump.node, loaded=True),
+            reason=reason,
+        )
 
     def _rank_by_need(
         self,

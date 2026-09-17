@@ -60,6 +60,9 @@ class DumpZoneSpec(BaseModel):
     tipping_bays: int = Field(default=1, ge=1)
     dump_time_s: float = Field(default=60.0, gt=0)
     capacity_tph: float | None = Field(default=None, gt=0)
+    # Only read by the LP: what a tonne is worth once tipped here, relative to
+    # its value at the shovel.
+    value_per_tonne: float = Field(default=1.0, ge=0)
 
 
 class BlendTargetSpec(BaseModel):
@@ -249,6 +252,7 @@ class ScenarioSpec(BaseModel):
             plan_inputs=PlanInputs(
                 values_per_tonne={shovel.id: shovel.value_per_tonne for shovel in self.shovels},
                 min_rates_tph={shovel.id: shovel.min_rate_tph for shovel in self.shovels},
+                dump_values_per_tonne={dump.id: dump.value_per_tonne for dump in self.dump_zones},
                 blend_targets=tuple(
                     BlendTarget(
                         dump_zone_id=blend.dump_zone,
@@ -413,4 +417,40 @@ def toy_mine_with_failure() -> ScenarioSpec:
     return ScenarioSpec.model_validate(spec)
 
 
-SCENARIOS = {"toy": toy_mine, "toy-failure": toy_mine_with_failure}
+def toy_mine_with_stockpile() -> ScenarioSpec:
+    """The same pit with a second ore destination, so the plan has to split.
+
+    The stockpile sits at the top of the ramp — a much shorter haul than the
+    crusher — but a tonne left there is worth less than a tonne fed to the
+    plant. With the crusher capped below what the benches can produce, the plan
+    has to decide how much ore takes the short cheap trip and how much earns
+    full value.
+    """
+    spec = toy_mine().model_dump()
+    spec["name"] = "toy-stockpile"
+    spec["edges"].append(
+        EdgeSpec(
+            source="ramp_top", target="stockpile", length_m=300, speed_limit_kph=40
+        ).model_dump()
+    )
+    spec["dump_zones"].append(
+        DumpZoneSpec(
+            id="stockpile",
+            node="stockpile",
+            accepts_ore=True,
+            tipping_bays=2,
+            dump_time_s=50,
+            value_per_tonne=0.6,
+        ).model_dump()
+    )
+    for dump in spec["dump_zones"]:
+        if dump["id"] == "crusher":
+            dump["capacity_tph"] = 1400
+    return ScenarioSpec.model_validate(spec)
+
+
+SCENARIOS = {
+    "toy": toy_mine,
+    "toy-failure": toy_mine_with_failure,
+    "toy-stockpile": toy_mine_with_stockpile,
+}

@@ -10,7 +10,7 @@ from dispatch_engine.domain.equipment import (
     Truck,
     TruckId,
 )
-from dispatch_engine.domain.mine import Mine, NodeId
+from dispatch_engine.domain.mine import Mine, NodeId, ZoneId
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +30,10 @@ class TruckStatus:
     free_in_s: float
     assigned_shovel: ShovelId | None = None
     eta_to_shovel_s: float | None = None
+    # Set while the truck is hauling loaded: where the material came from and
+    # where it is going, which is what a route's committed haulage is made of.
+    origin_zone: ZoneId | None = None
+    assigned_dump: ZoneId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +71,22 @@ class MineSnapshot:
     shovels: dict[ShovelId, ShovelStatus]
     trucks: dict[TruckId, TruckStatus]
     overrides: Overrides = field(default_factory=Overrides)
+    # Tonnes already tipped on each (load zone, dump zone) route this shift.
+    delivered_t: dict[tuple[ZoneId, ZoneId], float] = field(default_factory=dict)
+
+    def committed_to_route(self, load_zone_id: ZoneId, dump_zone_id: ZoneId) -> float:
+        """Tonnes tipped on this route so far plus those in flight towards it.
+
+        Unlike a shovel's committed haulage, which only looks at what is coming
+        right now, a destination split is judged over the whole shift: the blend
+        a plant receives is a running average, not an instantaneous one.
+        """
+        in_flight_t = sum(
+            status.truck.payload_t
+            for status in self.trucks.values()
+            if status.origin_zone == load_zone_id and status.assigned_dump == dump_zone_id
+        )
+        return self.delivered_t.get((load_zone_id, dump_zone_id), 0.0) + in_flight_t
 
     def available_shovels(self) -> dict[ShovelId, ShovelStatus]:
         """Shovels that can take a truck: operating and not excluded by hand."""

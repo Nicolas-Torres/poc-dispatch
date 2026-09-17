@@ -13,6 +13,7 @@ from mine_sim.scenario import (
     ScenarioSpec,
     toy_mine,
     toy_mine_with_failure,
+    toy_mine_with_stockpile,
 )
 from mine_sim.simulation import Simulation
 from pydantic import ValidationError
@@ -84,6 +85,35 @@ def test_lp_plan_keeps_the_crusher_blend_inside_its_window() -> None:
     blended = sum(rates[s] * grade for s, grade in ore.items()) / sum(rates.values())
 
     assert 0.6 - 1e-9 <= blended <= 0.8 + 1e-9
+
+
+def test_planned_destinations_keep_the_crusher_fed_and_on_grade() -> None:
+    scenario = toy_mine_with_stockpile().build()
+
+    kpis = _lp_simulation(scenario).run(until_s=4 * 3600.0)
+
+    crusher_t = kpis.tonnes_by_dump["crusher"]
+    delivered_grade = (
+        sum(
+            tonnes * scenario.mine.load_zones[zone_id].material.grades["cu"]
+            for (zone_id, dump_id), tonnes in kpis.tonnes_by_route.items()
+            if dump_id == "crusher"
+        )
+        / crusher_t
+    )
+
+    assert crusher_t > 0
+    assert kpis.tonnes_by_dump["stockpile"] > 0
+    assert 0.6 <= delivered_grade <= 0.8
+
+
+def test_without_a_route_plan_every_tonne_takes_the_shortest_haul() -> None:
+    # The stockpile is the closer ore destination, so the fallback starves the
+    # plant entirely. This is what choosing destinations by proximity costs.
+    kpis = Simulation(toy_mine_with_stockpile().build()).run(until_s=4 * 3600.0)
+
+    assert kpis.tonnes_by_dump.get("crusher", 0.0) == 0.0
+    assert kpis.tonnes_by_dump["stockpile"] > 0
 
 
 def test_plan_stops_feeding_the_crusher_when_the_blend_cannot_be_met() -> None:

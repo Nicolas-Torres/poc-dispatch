@@ -90,11 +90,8 @@ Comparado contra el plan estático, a igual tonelaje total movido (la flota mand
   disparadores que menciona la literatura: cambio de material en un banco, camión que entra o sale de
   flota.
 - **La literatura describe dos LP débilmente acoplados**; acá hay uno solo.
-- **El destino de descarga todavía lo elige la simulación por cercanía**, aunque el LP ya calcula
-  flujo por ruta (y por lo tanto por destino). Conectar la decisión de destino al plan es el paso
-  natural siguiente, y es lo que permite cumplir blending en la operación real y no solo en el plan.
-- **Sin costos de acarreo en el objetivo**: hoy `c_r` depende solo de la pala, no de la ruta. Un
-  objetivo más fiel restaría el costo del acarreo, que sí varía por ruta.
+- **Sin costos de acarreo en el objetivo**: hoy `c_r` es el valor de la pala por el valor del
+  destino, sin restar lo que cuesta el acarreo, que sí varía por ruta.
 - `ortools` emite tres `DeprecationWarning` de sus bindings SWIG al importarse. Son de la librería,
   no del proyecto.
 
