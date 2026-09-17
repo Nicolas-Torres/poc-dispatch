@@ -271,7 +271,8 @@ sale de servicio, y los destinos siguen el reparto por ruta que calculó el LP. 
 de importancia:
 
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
-- La otra heurística baseline: "la pala que lleva más tiempo sin recibir camión".
+- Margen de mezcla en los escenarios incorporados: el plan se para sobre el límite de ley y la
+  operación lo cruza.
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, pero la lluvia enlentece todos
   los viajes a la vez y son esos días los que marcan el peor caso.

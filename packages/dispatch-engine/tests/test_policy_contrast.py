@@ -5,6 +5,7 @@ from dispatch_engine.domain.equipment import CycleState, Shovel, StatusCode, Tru
 from dispatch_engine.domain.mine import DumpZone, Edge, LoadZone, Material, Mine, RoadNetwork
 from dispatch_engine.domain.snapshot import MineSnapshot, Overrides, ShovelStatus, TruckStatus
 from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
+from dispatch_engine.policies.longest_waiting_shovel import LongestWaitingShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.production_plan import StaticProductionPlan
 
@@ -71,6 +72,36 @@ def test_the_two_policies_disagree_on_purpose() -> None:
     # one starving; the baseline just goes wherever it can load soonest.
     assert follows_plan.assign(snapshot, "T1").shovel_id == "SH_FAR"
     assert myopic.assign(snapshot, "T1").shovel_id == "SH_NEAR"
+
+
+def test_the_even_baseline_goes_to_whichever_shovel_waited_longest() -> None:
+    best_path = BestPath(_mine().network)
+    # SH_NEAR is closer and SH_FAR is the one behind plan, but SH_NEAR is the one
+    # that has gone without a truck.
+    snapshot = MineSnapshot(
+        now_s=3600.0,
+        mine=_mine(),
+        shovels=_snapshot().shovels,
+        trucks=_snapshot().trucks,
+        last_dispatch_s={"SH_NEAR": 600.0, "SH_FAR": 3000.0},
+    )
+
+    assert (
+        LongestWaitingShovelPolicy(best_path=best_path, plan=PLAN).assign(snapshot, "T1").shovel_id
+        == "SH_NEAR"
+    )
+
+
+def test_the_even_baseline_honours_dispatcher_overrides() -> None:
+    policy = LongestWaitingShovelPolicy(best_path=BestPath(_mine().network), plan=PLAN)
+
+    locked = policy.assign(_snapshot(overrides=Overrides(locked={"T1": "SH_FAR"})), "T1")
+    nowhere = policy.assign(
+        _snapshot(overrides=Overrides(excluded_shovels=frozenset({"SH_NEAR", "SH_FAR"}))), "T1"
+    )
+
+    assert locked.shovel_id == "SH_FAR"
+    assert nowhere is None
 
 
 def test_the_baseline_still_honours_dispatcher_overrides() -> None:

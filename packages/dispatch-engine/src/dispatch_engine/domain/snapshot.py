@@ -73,6 +73,12 @@ class MineSnapshot:
     overrides: Overrides = field(default_factory=Overrides)
     # Tonnes already tipped on each (load zone, dump zone) route this shift.
     delivered_t: dict[tuple[ZoneId, ZoneId], float] = field(default_factory=dict)
+    # When each shovel was last sent a truck. Absent means it has not had one.
+    last_dispatch_s: dict[ShovelId, float] = field(default_factory=dict)
+
+    def waiting_since_s(self, shovel_id: ShovelId) -> float:
+        """How long the shovel has gone without being sent a truck."""
+        return self.now_s - self.last_dispatch_s.get(shovel_id, 0.0)
 
     def committed_to_route(self, load_zone_id: ZoneId, dump_zone_id: ZoneId) -> float:
         """Tonnes tipped on this route so far plus those in flight towards it.
