@@ -64,7 +64,7 @@ DEMOS = [
     {
         "id": "myopic",
         "title": "Sin plan: la heurística miope",
-        "blurb": "La misma mina despachando al más cercano. Mueve lo mismo y vale menos.",
+        "blurb": "La misma mina despachando al más cercano. Mueve más roca y vale menos.",
         "scenario": "toy",
         "policy": "earliest",
         "hours": 2.0,
