@@ -45,6 +45,50 @@ def test_toy_scenario_runs_a_full_shift_without_stalling() -> None:
     assert all(shovel.loads > 0 for shovel in kpis.shovels)
 
 
+def test_material_still_riding_at_the_cut_off_is_reported_apart() -> None:
+    # Tipped tonnage alone makes every short run look like it missed the plan,
+    # when the difference is simply still on a truck.
+    short = Simulation(toy_mine().build()).run(until_s=3600.0)
+    long_run = Simulation(toy_mine().build()).run(until_s=4 * 3600.0)
+
+    assert short.tonnes_in_transit > 0
+    assert short.tonnes_moved == short.tonnes_total + short.tonnes_in_transit
+    # The truncation is a fixed amount of material, so it weighs less the longer
+    # the run: the shortfall it causes has to shrink.
+    assert short.tonnes_in_transit / short.tonnes_moved > (
+        long_run.tonnes_in_transit / long_run.tonnes_moved
+    )
+
+
+def test_a_blend_margin_keeps_the_delivered_grade_inside_the_window() -> None:
+    spec = toy_mine().model_dump()
+    spec["blend_targets"][0]["margin"] = 0.05
+    scenario = ScenarioSpec.model_validate(spec).build()
+
+    kpis = _lp_simulation(scenario).run(until_s=4 * 3600.0)
+
+    grades = {"zone_n": 0.9, "zone_s": 0.5}
+    crusher_t = kpis.tonnes_by_dump["crusher"]
+    delivered = (
+        sum(
+            tonnes * grades[zone_id]
+            for (zone_id, dump_id), tonnes in kpis.tonnes_by_route.items()
+            if dump_id == "crusher"
+        )
+        / crusher_t
+    )
+
+    assert delivered <= 0.8
+
+
+def test_a_margin_wider_than_the_window_is_rejected() -> None:
+    spec = toy_mine().model_dump()
+    spec["blend_targets"][0]["margin"] = 0.2
+
+    with pytest.raises(ValidationError, match="leaves no room"):
+        ScenarioSpec.model_validate(spec)
+
+
 def test_ore_and_waste_reach_their_own_destinations() -> None:
     kpis = Simulation(toy_mine().build()).run(until_s=3600.0)
 

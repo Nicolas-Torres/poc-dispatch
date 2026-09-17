@@ -53,6 +53,9 @@ class ShovelKpis:
 class Kpis:
     horizon_s: float
     tonnes_total: float
+    # Loaded before the horizon ended but not tipped yet. Without it a short run
+    # looks like it missed the plan when the material is simply still on a truck.
+    tonnes_in_transit: float
     tonnes_by_dump: dict[str, float]
     # Tipped tonnes keyed by (load zone, dump zone): the realised counterpart of
     # the LP's route flows.
@@ -69,6 +72,11 @@ class Kpis:
     @property
     def tonnes_per_hour(self) -> float:
         return self.tonnes_total / (self.horizon_s / 3600.0) if self.horizon_s else 0.0
+
+    @property
+    def tonnes_moved(self) -> float:
+        """Everything the fleet lifted, tipped or still riding."""
+        return self.tonnes_total + self.tonnes_in_transit
 
 
 @dataclass(slots=True)
@@ -140,6 +148,7 @@ class EventLog:
         arrive_shovel_at: dict[str, float] = {}
         arrive_dump_at: dict[str, float] = {}
         spotting_since: dict[str, tuple[str, float]] = {}
+        riding_t: dict[str, float] = {}
         cycle_times_s: list[float] = []
         truck_queue_time_s = 0.0
         dump_queue_time_s = 0.0
@@ -169,6 +178,7 @@ class EventLog:
                 engaged_by_shovel[shovel_id] += event.time_s - engaged_since_s
                 tonnes_by_shovel[shovel_id] += event.payload_t
                 loads_by_shovel[shovel_id] += 1
+                riding_t[event.truck_id] = event.payload_t
             elif event.kind is EventKind.ARRIVE_DUMP:
                 arrive_dump_at[event.truck_id] = event.time_s
             elif event.kind is EventKind.DUMP_START:
@@ -179,10 +189,12 @@ class EventLog:
                 tonnes_by_dump[event.dump_id] += event.payload_t
                 tonnes_by_route[event.zone_id, event.dump_id] += event.payload_t
                 cycle_times_s.append(event.time_s - assigned_at.pop(event.truck_id))
+                riding_t.pop(event.truck_id)
 
         return Kpis(
             horizon_s=horizon_s,
             tonnes_total=sum(tonnes_by_dump.values()),
+            tonnes_in_transit=sum(riding_t.values()),
             tonnes_by_dump=dict(tonnes_by_dump),
             tonnes_by_route=dict(tonnes_by_route),
             cycles=len(cycle_times_s),

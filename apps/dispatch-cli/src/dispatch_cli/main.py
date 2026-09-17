@@ -169,7 +169,7 @@ def compare(
     typer.echo(f"scenario {built.name} - {hours:.1f} h - lp plan\n")
     header = "  metric                " + "".join(f"{name:>12}" for name in POLICIES)
     typer.echo(header)
-    _compare_row("tonnes moved", results, lambda kpis: f"{kpis.tonnes_total:,.0f}")
+    _compare_row("tonnes moved", results, lambda kpis: f"{kpis.tonnes_moved:,.0f}")
     _compare_row("plan value", results, lambda kpis: f"{_realised_value(built, kpis):,.0f}")
     _compare_row("cycles", results, lambda kpis: f"{kpis.cycles}")
     _compare_row(
@@ -277,8 +277,14 @@ def _report_blends(scenario: Scenario, kpis: Kpis) -> None:
             continue
         low = "-" if target.min_grade is None else f"{target.min_grade:.2f}"
         high = "-" if target.max_grade is None else f"{target.max_grade:.2f}"
+        # Flagged rather than left for the reader to spot: a blend a hair over
+        # the limit is exactly what the plant rejects.
+        out_of_spec = (target.min_grade is not None and delivered < target.min_grade) or (
+            target.max_grade is not None and delivered > target.max_grade
+        )
         typer.echo(
             f"  {target.dump_zone_id:<13} {target.element:<9} {delivered:>9.3f}   {low} - {high}"
+            f"{'   OUT OF SPEC' if out_of_spec else ''}"
         )
 
 
@@ -286,7 +292,10 @@ def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, setup: str) ->
     # Plain ASCII only: Windows consoles default to cp1252 and mangle dashes.
     typer.echo(f"scenario {scenario.name} - {kpis.horizon_s / 3600:.1f} h - {setup}")
     typer.echo(
-        f"  tonnes moved    {kpis.tonnes_total:>10,.0f} t  ({kpis.tonnes_per_hour:,.0f} t/h)"
+        f"  tonnes tipped   {kpis.tonnes_total:>10,.0f} t  ({kpis.tonnes_per_hour:,.0f} t/h)"
+    )
+    typer.echo(
+        f"  in transit      {kpis.tonnes_in_transit:>10,.0f} t  (loaded, not tipped at cut-off)"
     )
     typer.echo(f"  cycles          {kpis.cycles:>10}")
     typer.echo(f"  avg cycle time  {kpis.avg_cycle_time_s / 60:>10.1f} min")

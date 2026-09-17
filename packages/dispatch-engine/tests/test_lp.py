@@ -106,13 +106,39 @@ def test_blend_window_forces_both_benches() -> None:
         )
     )
 
+    assert plan.required_rate_tph("SH_NEAR") > 0
+    assert plan.required_rate_tph("SH_FAR") > 0
+    assert 0.6 - 1e-9 <= _blend(plan) <= 0.8 + 1e-9
+
+
+def test_a_margin_keeps_the_plan_off_the_blend_limit() -> None:
+    # Only the high grade bench is worth anything and the fleet is ample, so the
+    # blend ceiling is the constraint that binds: the LP takes as much high grade
+    # as the window allows and dilutes with the minimum it has to.
+    window = {"dump_zone_id": "crusher", "element": "cu", "min_grade": 0.6, "max_grade": 0.8}
+    values = {"SH_NEAR": 10.0, "SH_FAR": 0.0}
+
+    def solve(margin: float) -> LpProductionPlan:
+        mine = _mine()
+        return solve_production_plan(
+            mine=mine,
+            shovels=SHOVELS,
+            fleets=(FleetType(name="default", trucks=20, payload_t=200.0),),
+            best_path=BestPath(mine.network),
+            inputs=PlanInputs(
+                values_per_tonne=values,
+                blend_targets=(BlendTarget(**window, margin=margin),),
+            ),
+        )
+
+    assert _blend(solve(margin=0.0)) == pytest.approx(0.8)
+    assert _blend(solve(margin=0.03)) == pytest.approx(0.77)
+
+
+def _blend(plan: LpProductionPlan) -> float:
     high_tph = plan.required_rate_tph("SH_NEAR")
     low_tph = plan.required_rate_tph("SH_FAR")
-    blended_grade = (high_tph * 0.9 + low_tph * 0.5) / (high_tph + low_tph)
-
-    assert high_tph > 0
-    assert low_tph > 0
-    assert 0.6 - 1e-9 <= blended_grade <= 0.8 + 1e-9
+    return (high_tph * 0.9 + low_tph * 0.5) / (high_tph + low_tph)
 
 
 def test_production_floor_is_respected() -> None:
