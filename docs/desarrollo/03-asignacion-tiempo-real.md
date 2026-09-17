@@ -83,9 +83,9 @@ respecto del plan, el redondeo pesa menos.
 de las palas por necesidad, no la distancia entre ellas, así que un cambio de plan que no reordena la
 lista no cambia una sola asignación. Medido con el margen de mezcla sobre `toy`: pasar el plan de ley
 0,800 a 0,770 —un cambio del 30 % en el tonelaje pedido a SH02— dio una corrida **idéntica**, y recién
-a 0,750, cuando SH02 supera a SH03 en el ranking, el comportamiento saltó. Explica buena parte de la
-mala adhesión de SH02 documentada arriba, y sugiere que la elección del par camión/pala debería pesar
-la magnitud de la necesidad y no solo tomar la primera.
+a 0,750, cuando SH02 supera a SH03 en el ranking, el comportamiento saltó.
+
+Parecía un defecto obvio. **Se intentó arreglarlo y no funcionó** — ver abajo.
 
 **`shovel_idle_weight` es contraproducente cuando la flota es el cuello de botella.** Subirlo de 1 a
 5 sobre `toy` costó 63 % más de cola de camiones (24,8 → 40,5 min), **empeoró** el ocioso total de
@@ -94,6 +94,45 @@ pérdida pura. Con palas al 20-60 % de utilización el ocioso no lo causa el des
 camiones, y forzar la palanca solo concentra la flota en una pala. El comentario original en el
 código decía "subilo para mantener las palas ocupadas" sin esa condición, lo que lo volvía engañoso;
 está corregido.
+
+## Resultado negativo: suavizar el ranking no paga
+
+La hipótesis era que puntuar **todos** los pares camión/pala de forma continua —en vez de fijarse en
+la pala mejor rankeada y recién ahí buscar camión— mejoraría la adhesión al plan. Se implementó como
+`score = penalidad − déficit` y se midió. **Empeoró, y se revirtió.**
+
+**Variante 1, déficit normalizado por la tasa planificada** (`déficit_t / tasa × 3600`, o sea
+"segundos de producción que la pala va a perder"). Sobre `toy` a 4 h movió **440 t de mineral a
+estéril** —`zone_n` de 5.720 a 5.280 t, `zone_w` de 3.300 a 3.520— y el valor cayó de 31.460 a
+29.920, un 5 %.
+
+La causa es un error conceptual: dividir por la tasa **deshace la conversión de Little** que ya estaba
+adentro de `required_haulage_t`. Con esa normalización toda pala queda aproximadamente "un ciclo
+atrás", y SH01 —que necesita 3,2 camiones— termina rankeada por debajo de SH02, que necesita 1,2.
+Convertir a tiempo borra exactamente la magnitud que se quería conservar.
+
+**Variante 2, déficit en toneladas con un precio fijo en segundos por tonelada.** Barrido sobre el
+precio:
+
+| segundos/tonelada | valor en `toy` | valor en `toy-stockpile` |
+|---|---|---|
+| 0,2 | 27.720 | 27.896 |
+| 0,5 | 29.920 | 27.984 |
+| 1,0 | 30.800 | 27.984 |
+| 2,0 | 31.240 | 27.984 |
+| 5,0 | **31.460** | 27.984 |
+| *original* | **31.460** | **29.304** |
+
+En `toy` el valor sube monótonamente con el precio hasta **converger al valor del algoritmo
+original**: cuanto más domina el déficit, más se parece al ranking lexicográfico. En `toy-stockpile`
+es peor en todos los precios.
+
+**Conclusión.** "Servir primero a la pala más necesitada" no es un defecto para suavizar: es una
+regla buena. Cualquier suavizado cambia adhesión al plan por cercanía, y eso cuesta valor. La
+cuantización sigue siendo una descripción correcta del algoritmo, pero quitarla no se paga sola.
+
+Lo que sí queda en pie: un cambio de plan que no reordena las palas no cambia el comportamiento. Si
+eso molesta, la palanca es el **plan** —márgenes, prioridades, tasas— y no la función de puntaje.
 
 ## Otras simplificaciones
 
