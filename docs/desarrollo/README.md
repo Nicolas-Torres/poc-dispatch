@@ -17,6 +17,7 @@ problemas aparecieron en el camino.
 | [09 — Comparación de políticas](09-comparacion-de-politicas.md) | Las baselines de la literatura y cuánto compra el plan |
 | [10 — Variabilidad estocástica](10-variabilidad.md) | Ruido, fallas de equipo y réplicas; ¿sobrevive la ventaja? |
 | [11 — Un plan ejecutable](11-plan-ejecutable.md) | Por qué el plan óptimo entregaba mineral fuera de ley |
+| [12 — La demo visual 3D](12-demo-visual.md) | Evaluación de tecnología, Three.js sobre FastAPI y los hallazgos |
 
 > Los números de los documentos 02, 05, 07, 09 y 10 son de cuando se midió cada etapa. El cambio de
 > la [etapa 11](11-plan-ejecutable.md) movió las cifras de los escenarios; el
@@ -44,6 +45,8 @@ los camiones contra ese plan.
   mina.
 - Variabilidad estocástica opcional: dispersión de ciclos, fallas de camión y pala, semilla y
   réplicas con media ± dispersión.
+- Demo visual 3D en el navegador: cinco escenarios preparados, línea de tiempo con play y scrub, y
+  tablero de producción que se acumula mientras corre.
 
 **Lo que falta**
 
@@ -68,4 +71,6 @@ uv run dispatch-cli compare --scenario toy-stockpile --hours 4 # plan vs. heurí
 
 uv run dispatch-cli export-scenario --scenario toy --out mi-mina.yaml   # para editar la tuya
 uv run dispatch-cli run --scenario mi-mina.yaml --export-events ciclos.csv
+
+uv run dispatch-demo                                           # la demo visual 3D
 ```

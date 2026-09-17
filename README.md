@@ -66,7 +66,14 @@ uv sync
 uv run dispatch-cli scenarios                     # escenarios disponibles
 uv run dispatch-cli plan --scenario toy           # etapa 2: el plan de producción
 uv run dispatch-cli run --scenario toy --hours 2  # corrida completa con KPIs
+
+uv run dispatch-demo                              # la demo visual 3D en el navegador
 ```
+
+`dispatch-demo` levanta un servidor local y abre el navegador: cinco demos preparadas, la mina en
+3D con los camiones moviéndose sobre sus rutas reales, una línea de tiempo que se puede pausar y
+arrastrar, y un tablero de producción que se acumula mientras corre. No hace falta escribir ningún
+comando para usarla. Detalle en [`docs/desarrollo/12-demo-visual.md`](docs/desarrollo/12-demo-visual.md).
 
 El plan que resuelve el LP para la mina de ejemplo:
 
@@ -225,12 +232,14 @@ time_s,kind,truck_id,shovel_id,dump_id,zone_id,payload_t,detail
 
 ## Estructura
 
-Workspace de uv con tres miembros. La dirección de dependencias es estricta y es lo que mantiene el
+Workspace de uv con cuatro miembros. La dirección de dependencias es estricta y es lo que mantiene el
 motor reusable: **el motor no depende de la simulación**, y la simulación lo consume solo a través
 del `Protocol` `DispatchPolicy`.
 
 ```
-apps/dispatch-cli  →  packages/mine-sim  →  packages/dispatch-engine
+apps/dispatch-cli  ┐
+                   ├→  packages/mine-sim  →  packages/dispatch-engine
+apps/dispatch-web  ┘
 ```
 
 | Paquete | Contenido |
@@ -238,6 +247,7 @@ apps/dispatch-cli  →  packages/mine-sim  →  packages/dispatch-engine
 | `packages/dispatch-engine` | Dominio (mina, equipos, snapshot) y las tres etapas del motor |
 | `packages/mine-sim` | Gemelo digital con SimPy, definición de escenarios y KPIs |
 | `apps/dispatch-cli` | Entrypoint de línea de comandos |
+| `apps/dispatch-web` | Demo visual 3D: FastAPI y Three.js sin build step |
 
 Los dos puntos de corte que sostienen la arquitectura:
 
@@ -265,7 +275,8 @@ uv run ruff check . && uv run ruff format .
 | Simulación de eventos discretos | `simpy` |
 | Escenarios y validación | `pydantic`, `pyyaml` |
 | CLI | `typer` |
-| Tests / lint | `pytest`, `ruff` |
+| Demo visual | `fastapi`, `uvicorn`, `three.js` (vendorizado) |
+| Tests / lint | `pytest`, `ruff`, `playwright` |
 
 **Flujo de trabajo**: GitHub Flow, ramas `feature/*` → PR → `main`. Commits con solo el subject line
 de Conventional Commits; descripción del PR de máximo 6 líneas.
@@ -288,6 +299,9 @@ de importancia:
 - [`docs/desarrollo/`](docs/desarrollo/) — bitácora por etapa: qué se construyó, qué se decidió, qué
   se simplificó y qué bugs aparecieron. Incluye el análisis de adhesión al plan y por qué el LP
   corrigió el reparto entre palas.
+- [`docs/desarrollo/12-demo-visual.md`](docs/desarrollo/12-demo-visual.md) — por qué Three.js sobre
+  FastAPI, cómo se inventan coordenadas para una mina que no las tiene, y los siete hallazgos que
+  salieron de iterar con capturas.
 - [`docs/contexto/`](docs/contexto/) — cómo funciona el DISPATCH real y qué documentación pública
   existe (papers, patentes, reimplementaciones académicas).
 - [`docs/requisitos/`](docs/requisitos/) y [`docs/plan.md`](docs/plan.md) — objetivo y plan de trabajo.
