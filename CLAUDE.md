@@ -2,16 +2,31 @@
 
 Este archivo da indicaciones a Claude Code (claude.ai/code) para trabajar con el código de este repositorio.
 
-## Estado del proyecto
+## Estructura y comandos
 
-Este repositorio actualmente contiene **solo documentos de planificación/referencia bajo `docs/`** — no hay
-código fuente, no hay manifiesto de paquete, y todavía no se ha inicializado un repositorio git. No existen
-comandos de build, lint o test porque aún no se ha creado ningún andamiaje (scaffolding). Antes de asumir
-que existe alguna herramienta (versión de Python, gestor de paquetes, framework de tests), verificar si se
-ha añadido desde entonces.
+Workspace de **uv** (Python 3.12) con tres miembros. La dirección de dependencias es estricta y es lo
+que mantiene el motor reusable: **`apps/dispatch-cli` → `packages/mine-sim` → `packages/dispatch-engine`**.
+El motor nunca depende de la simulación; la simulación lo consume solo a través del `Protocol`
+`DispatchPolicy`.
 
-`docs/plan.md` indica que el stack previsto es **Python + uv**, con una pregunta abierta sobre si un layout
-de uv workspace se ajusta a la necesidad del proyecto — esto aún no está decidido ni implementado.
+```
+packages/dispatch-engine/   # dominio + las 3 etapas del motor (etapa 2 solo interfaz)
+packages/mine-sim/          # gemelo digital SimPy + escenarios + KPIs
+apps/dispatch-cli/          # entrypoint de línea de comandos
+```
+
+```bash
+uv sync
+uv run pytest                                     # toda la suite
+uv run pytest packages/dispatch-engine/tests/test_best_path.py::test_route_minimises_time_not_distance
+uv run ruff check . && uv run ruff format .
+uv run dispatch-cli run --scenario toy --hours 2  # corrida punta a punta
+```
+
+Estado por etapa: 1 (Best Path) implementada, 2 (LP con OR-Tools) **solo interfaz**, 3 (asignación en
+tiempo real) implementada en forma reducida. El detalle de lo construido, las decisiones, las
+simplificaciones y los bugs encontrados está en **`docs/desarrollo/`** (un documento por etapa). Al
+avanzar una etapa, actualizar ahí.
 
 ## Qué es este proyecto
 
