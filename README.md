@@ -149,6 +149,31 @@ Corriendo lo mismo con `--plan static`, que no tiene opinión sobre destinos y c
 cercano, **todo el mineral termina en el stockpile y la planta queda en cero**. Elegir el destino por
 cercanía no es una aproximación algo peor: rompe el objetivo del plan.
 
+### Cuánto compra seguir el plan
+
+```bash
+uv run dispatch-cli compare --scenario toy-stockpile --hours 4
+```
+
+Corre la misma mina con la misma flota bajo dos estrategias: la de dos etapas y la heurística simple
+que la literatura usa como contraste, "**1 camión para n palas**", que manda el camión a la pala donde
+podría empezar a cargar antes. Las dos eligen destino de la misma forma, así que lo único que cambia
+es la decisión de pala.
+
+```
+  metric                    neediest    earliest
+  tonnes moved                11,000      11,000
+  plan value                  29,304      23,804
+  truck queueing (min)          43.1        22.6
+  crusher cu                   0.783       0.689
+    window               0.60 - 0.80
+```
+
+La heurística simple hace exactamente lo que promete: **casi la mitad de tiempo de cola**, y en la
+mina base incluso mueve más toneladas. Pero gana entre 17 % y 23 % menos valor, porque manda los
+camiones a la pala que los atiende antes en vez de a la que el plan necesita. Es el resultado que
+justifica la arquitectura de dos etapas: mover más material más rápido no es el objetivo.
+
 ### Tu propia mina
 
 Los escenarios de arriba vienen incorporados, pero la idea es simular una mina cualquiera. Se exporta
@@ -192,8 +217,9 @@ Los dos puntos de corte que sostienen la arquitectura:
 
 - **`ProductionPlan`** (`required_rate_tph` / `required_haulage_t`): la etapa 3 nunca ve el solver.
   Se puede cambiar `LpProductionPlan` por `StaticProductionPlan` sin tocar la asignación.
-- **`DispatchPolicy`**: la simulación no conoce el algoritmo. Se pueden enchufar otras estrategias
-  (heurísticas simples, a futuro aprendizaje por refuerzo) sin tocar el simulador.
+- **`DispatchPolicy`**: la simulación no conoce el algoritmo. Sobre esa costura viven hoy la política
+  de dos etapas y la baseline de la literatura, y ahí entraría a futuro una por aprendizaje por
+  refuerzo.
 
 La intervención manual del despachador —fijar un camión a una pala, excluir equipos, cambiar
 prioridades— viaja en el snapshot (`Overrides`), así que cualquier política la respeta sin
@@ -226,6 +252,7 @@ de importancia:
 
 - Los demás disparadores de replanificación: cambio de material en un banco, camión que entra o sale.
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
+- La otra heurística baseline: "la pala que lleva más tiempo sin recibir camión".
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Variabilidad estocástica y fallas de camión; hoy las paradas son deterministas y programadas.
 

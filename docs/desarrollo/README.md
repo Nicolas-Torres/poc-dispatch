@@ -14,6 +14,7 @@ problemas aparecieron en el camino.
 | [06 — Replanificación reactiva](06-replanificacion.md) | Paradas de pala, re-solución del LP y redespacho |
 | [07 — Destinos que salen del plan](07-destinos-planificados.md) | Reparto de destinos por ruta y ley entregada |
 | [08 — Minas en archivo](08-escenarios-en-archivo.md) | Escenarios YAML/JSON y log de ciclos en CSV |
+| [09 — Comparación de políticas](09-comparacion-de-politicas.md) | La baseline de la literatura y cuánto compra el plan |
 
 ## Estado actual
 
@@ -33,6 +34,7 @@ los camiones contra ese plan.
   contra la ventana de mezcla.
 - Intervención manual del despachador (fijar camión a pala, excluir equipos).
 - Minas propias definidas en YAML/JSON y log de ciclos persistido a CSV.
+- Una política baseline de la literatura y un comando para comparar estrategias sobre la misma mina.
 
 **Lo que falta**
 
@@ -52,6 +54,8 @@ uv run dispatch-cli run --scenario toy --hours 2               # corrida con pla
 uv run dispatch-cli run --scenario toy --hours 2 --plan static # comparación con targets fijos
 uv run dispatch-cli run --scenario toy-failure --hours 2       # con una pala caída 40 min
 uv run dispatch-cli run --scenario toy-stockpile --hours 4     # dos destinos para el mineral
+
+uv run dispatch-cli compare --scenario toy-stockpile --hours 4 # plan vs. heurística simple
 
 uv run dispatch-cli export-scenario --scenario toy --out mi-mina.yaml   # para editar la tuya
 uv run dispatch-cli run --scenario mi-mina.yaml --export-events ciclos.csv
