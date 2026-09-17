@@ -4,8 +4,8 @@ Este archivo da indicaciones a Claude Code (claude.ai/code) para trabajar con el
 
 ## Estructura y comandos
 
-Workspace de **uv** (Python 3.12) con tres miembros. La dirección de dependencias es estricta y es lo
-que mantiene el motor reusable: **`apps/dispatch-cli` → `packages/mine-sim` → `packages/dispatch-engine`**.
+Workspace de **uv** (Python 3.12) con cuatro miembros. La dirección de dependencias es estricta y es
+lo que mantiene el motor reusable: **`apps/*` → `packages/mine-sim` → `packages/dispatch-engine`**.
 El motor nunca depende de la simulación; la simulación lo consume solo a través del `Protocol`
 `DispatchPolicy`.
 
@@ -13,6 +13,7 @@ El motor nunca depende de la simulación; la simulación lo consume solo a trav�
 packages/dispatch-engine/   # dominio + las 3 etapas del motor (etapa 2 solo interfaz)
 packages/mine-sim/          # gemelo digital SimPy + escenarios + KPIs
 apps/dispatch-cli/          # entrypoint de línea de comandos
+apps/dispatch-web/          # demo visual 3D (FastAPI + Three.js, sin build step)
 ```
 
 ```bash
@@ -22,6 +23,7 @@ uv run pytest packages/dispatch-engine/tests/test_best_path.py::test_route_minim
 uv run ruff check . && uv run ruff format .
 uv run dispatch-cli plan --scenario toy           # etapa 2: flujo por ruta
 uv run dispatch-cli run --scenario toy --hours 2  # corrida punta a punta
+uv run dispatch-demo                              # demo visual 3D en el navegador
 ```
 
 Las tres etapas están implementadas (la 3 en forma reducida: sin las restricciones operativas de la

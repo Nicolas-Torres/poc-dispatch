@@ -18,10 +18,12 @@ problemas aparecieron en el camino.
 | [10 — Variabilidad estocástica](10-variabilidad.md) | Ruido, fallas de equipo y réplicas; ¿sobrevive la ventaja? |
 | [11 — Un plan ejecutable](11-plan-ejecutable.md) | Por qué el plan óptimo entregaba mineral fuera de ley |
 | [12 — La demo visual 3D](12-demo-visual.md) | Evaluación de tecnología, Three.js sobre FastAPI y los hallazgos |
+| [13 — Seguimiento del plan](13-seguimiento-del-plan.md) | La deriva sin techo y la capacidad de destino que nadie hacia cumplir |
 
-> Los números de los documentos 02, 05, 07, 09 y 10 son de cuando se midió cada etapa. El cambio de
-> la [etapa 11](11-plan-ejecutable.md) movió las cifras de los escenarios; el
-> [README del proyecto](../../README.md) tiene las vigentes.
+> Los números de los documentos 02 a 12 son de cuando se midió cada etapa. La
+> [etapa 13](13-seguimiento-del-plan.md) movió las cifras de todos los escenarios —el gemelo pasó a
+> hacer cumplir la capacidad de los destinos, así que el valor absoluto bajó parejo en todas las
+> políticas—; el [README del proyecto](../../README.md) tiene las vigentes.
 
 ## Estado actual
 
@@ -47,10 +49,14 @@ los camiones contra ese plan.
   réplicas con media ± dispersión.
 - Demo visual 3D en el navegador: cinco escenarios preparados, línea de tiempo con play y scrub, y
   tablero de producción que se acumula mientras corre.
+- Seguimiento del plan con acción integral: la adhesión ya no se degrada al alargar el turno.
+- Capacidad de admisión de los destinos hecha cumplir en el gemelo, con cola emergente en la
+  descarga.
 
 **Lo que falta**
 
-- Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
+- Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan. Ahora es
+  medible: las colas en descarga existen desde la etapa 13.
 - Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, y la lluvia enlentece todo a la
   vez.
