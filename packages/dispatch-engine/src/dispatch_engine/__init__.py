@@ -3,7 +3,7 @@ from dispatch_engine.domain.assignment import Assignment
 from dispatch_engine.domain.equipment import CycleState, Shovel, StatusCode, Truck
 from dispatch_engine.domain.mine import DumpZone, Edge, LoadZone, Material, Mine, RoadNetwork
 from dispatch_engine.domain.routing import Route
-from dispatch_engine.domain.snapshot import MineSnapshot, Overrides, TruckStatus
+from dispatch_engine.domain.snapshot import MineSnapshot, Overrides, ShovelStatus, TruckStatus
 from dispatch_engine.lp import (
     BlendTarget,
     FleetType,
@@ -41,6 +41,7 @@ __all__ = [
     "Route",
     "RouteFlow",
     "Shovel",
+    "ShovelStatus",
     "StaticProductionPlan",
     "StatusCode",
     "Truck",

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dispatch_engine.best_path import BestPath
 from dispatch_engine.domain.equipment import CycleState, Shovel, ShovelId, StatusCode, Truck
 from dispatch_engine.domain.mine import DumpZone, Edge, LoadZone, Material, Mine, RoadNetwork
-from dispatch_engine.domain.snapshot import MineSnapshot, Overrides, TruckStatus
+from dispatch_engine.domain.snapshot import MineSnapshot, Overrides, ShovelStatus, TruckStatus
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.production_plan import StaticProductionPlan
 
@@ -53,19 +53,25 @@ def _snapshot(
     trucks: list[TruckStatus],
     *,
     priorities: dict[ShovelId, int] | None = None,
+    statuses: dict[ShovelId, StatusCode] | None = None,
     overrides: Overrides | None = None,
 ) -> MineSnapshot:
     priorities = priorities or {}
+    statuses = statuses or {}
     return MineSnapshot(
         now_s=0.0,
         mine=_mine(),
         shovels={
-            "SH_A": Shovel(
-                id="SH_A", zone="zone_a", load_rate_tph=3000, priority=priorities.get("SH_A", 0)
-            ),
-            "SH_B": Shovel(
-                id="SH_B", zone="zone_b", load_rate_tph=3000, priority=priorities.get("SH_B", 0)
-            ),
+            shovel_id: ShovelStatus(
+                shovel=Shovel(
+                    id=shovel_id,
+                    zone=zone_id,
+                    load_rate_tph=3000,
+                    priority=priorities.get(shovel_id, 0),
+                ),
+                status=statuses.get(shovel_id, StatusCode.OPERATING),
+            )
+            for shovel_id, zone_id in (("SH_A", "zone_a"), ("SH_B", "zone_b"))
         },
         trucks={status.truck.id: status for status in trucks},
         overrides=overrides if overrides is not None else Overrides(),
@@ -148,6 +154,26 @@ def test_excluded_truck_gets_no_assignment() -> None:
     policy = _policy({"SH_A": 1000.0, "SH_B": 1000.0})
     snapshot = _snapshot(
         [_idle_truck("T1")], overrides=Overrides(excluded_trucks=frozenset({"T1"}))
+    )
+
+    assert policy.assign(snapshot, "T1") is None
+
+
+def test_shovel_out_of_service_gets_no_assignment() -> None:
+    policy = _policy({"SH_A": 0.0, "SH_B": 2000.0})
+    snapshot = _snapshot([_idle_truck("T1")], statuses={"SH_B": StatusCode.DOWN})
+
+    assignment = policy.assign(snapshot, "T1")
+
+    assert assignment is not None
+    assert assignment.shovel_id == "SH_A"
+
+
+def test_no_assignment_when_every_shovel_is_out_of_service() -> None:
+    policy = _policy({"SH_A": 1000.0, "SH_B": 1000.0})
+    snapshot = _snapshot(
+        [_idle_truck("T1")],
+        statuses={"SH_A": StatusCode.DOWN, "SH_B": StatusCode.DELAY},
     )
 
     assert policy.assign(snapshot, "T1") is None
