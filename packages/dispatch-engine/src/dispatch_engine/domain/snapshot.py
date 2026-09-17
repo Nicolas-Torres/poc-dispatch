@@ -37,12 +37,48 @@ class TruckStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class TruckRestriction:
+    """An operational restriction on a truck, as in US 11,187,547.
+
+    A truck with a failing engine, a cracked tray or a bad transmission is not
+    out of service: it is usable on worse terms. Excluding it is the hammer, and
+    it is the only tool the engine had before this. The patent describes where
+    each restriction enters the assignment procedure, and that is where each one
+    is applied here: load reduction changes the assigned haulage values, speed
+    reduction changes the projected arrival times, and a short-haul restriction
+    changes membership of the candidate list Tc(s).
+    """
+
+    # Only dispatch to shovels whose haul is short — SH_PARAM in the patent, a
+    # fraction of the longest haul on offer.
+    short_hauls_only: bool = False
+    # Below one, the truck travels slower than the road would allow.
+    speed_factor: float = 1.0
+    # Below one, the truck is loaded below its rated payload.
+    load_factor: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.speed_factor <= 1.0:
+            raise ValueError("speed_factor must be in (0, 1]")
+        if not 0.0 < self.load_factor <= 1.0:
+            raise ValueError("load_factor must be in (0, 1]")
+
+
+NO_RESTRICTION = TruckRestriction()
+
+
+@dataclass(frozen=True, slots=True)
 class Overrides:
     """Manual dispatcher intervention layered on top of the algorithm."""
 
     locked: dict[TruckId, ShovelId] = field(default_factory=dict)
     excluded_trucks: frozenset[TruckId] = frozenset()
     excluded_shovels: frozenset[ShovelId] = frozenset()
+    # Trucks kept in service on worse terms rather than parked.
+    restrictions: dict[TruckId, TruckRestriction] = field(default_factory=dict)
+
+    def restriction(self, truck_id: TruckId) -> TruckRestriction:
+        return self.restrictions.get(truck_id, NO_RESTRICTION)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +128,7 @@ class MineSnapshot:
         a plant receives is a running average, not an instantaneous one.
         """
         in_flight_t = sum(
-            status.truck.payload_t
+            self.effective_payload_t(status.truck.id)
             for status in self.trucks.values()
             if status.origin_zone == load_zone_id and status.assigned_dump == dump_zone_id
         )
@@ -110,8 +146,19 @@ class MineSnapshot:
         """Ta(s): trucks at, heading to, or projected to be dispatched to the shovel."""
         return [t for t in self.trucks.values() if t.assigned_shovel == shovel_id]
 
+    def effective_payload_t(self, truck_id: TruckId) -> float:
+        """What the truck will actually deliver, after any load reduction.
+
+        Every haulage value is counted with this rather than the rated payload,
+        which is the point of the restriction: a truck coming in at 60 % of its
+        tray does not fill 100 % of a shovel's need.
+        """
+        return (
+            self.trucks[truck_id].truck.payload_t * self.overrides.restriction(truck_id).load_factor
+        )
+
     def assigned_haulage_t(self, shovel_id: ShovelId) -> float:
-        return sum(t.truck.payload_t for t in self.arrivals(shovel_id))
+        return sum(self.effective_payload_t(t.truck.id) for t in self.arrivals(shovel_id))
 
     def trucks_needing_assignment(self) -> list[TruckStatus]:
         """T': trucks that need, or will soon need, a shovel assignment."""

@@ -24,7 +24,12 @@ def shovel_free_at_s(snapshot: MineSnapshot, shovel_id: ShovelId) -> float:
     """
     shovel = snapshot.shovels[shovel_id].shovel
     arrivals = sorted(
-        (snapshot.now_s + (status.eta_to_shovel_s or 0.0), shovel.load_time_s(status.truck))
+        (
+            snapshot.now_s + (status.eta_to_shovel_s or 0.0),
+            # A truck coming in light is also quicker to fill.
+            shovel.load_time_s(status.truck)
+            * snapshot.overrides.restriction(status.truck.id).load_factor,
+        )
         for status in snapshot.arrivals(shovel_id)
     )
     free_s = snapshot.now_s
@@ -36,10 +41,66 @@ def shovel_free_at_s(snapshot: MineSnapshot, shovel_id: ShovelId) -> float:
 def arrival_at_shovel_s(
     best_path: BestPath, snapshot: MineSnapshot, status: TruckStatus, shovel: Shovel
 ) -> float:
-    """When the truck would reach the shovel, counting the work it has left."""
+    """When the truck would reach the shovel, counting the work it has left.
+
+    A speed restriction stretches the haul, so the engine projects the arrival it
+    will really get rather than the one the road would allow.
+    """
     zone_node = snapshot.mine.load_zones[shovel.zone].node
     travel_s = best_path.travel_time_s(status.free_at_node, zone_node, loaded=False)
-    return snapshot.now_s + status.free_in_s + travel_s
+    speed_factor = snapshot.overrides.restriction(status.truck.id).speed_factor
+    return snapshot.now_s + status.free_in_s + travel_s / speed_factor
+
+
+def dispatchable_candidates(
+    best_path: BestPath,
+    snapshot: MineSnapshot,
+    shovel: Shovel,
+    pending: set[TruckId],
+    sh_param: float,
+) -> list[TruckStatus]:
+    """Tc(s), with the short-haul restriction applied to list membership.
+
+    A truck restricted to short hauls is dropped from the candidates of any
+    shovel further than `sh_param` of the longest haul available to it. The
+    threshold is relative rather than absolute so it means the same thing in a
+    small pit and a large one — SH_PARAM in the patent is a percentage.
+
+    If the restriction would leave the truck nowhere to go, it keeps its nearest
+    shovel: a restriction is meant to limit a truck, not strand it.
+    """
+    candidates = [
+        status for status in snapshot.candidates_for(shovel.id) if status.truck.id in pending
+    ]
+    return [
+        status
+        for status in candidates
+        if not snapshot.overrides.restriction(status.truck.id).short_hauls_only
+        or _is_short_haul(best_path, snapshot, status, shovel, sh_param)
+    ]
+
+
+def _is_short_haul(
+    best_path: BestPath,
+    snapshot: MineSnapshot,
+    status: TruckStatus,
+    shovel: Shovel,
+    sh_param: float,
+) -> bool:
+    reachable = [
+        best_path.travel_time_s(
+            status.free_at_node, snapshot.mine.load_zones[other.shovel.zone].node, loaded=False
+        )
+        for other in snapshot.available_shovels().values()
+    ]
+    if not reachable:
+        return True
+    this_haul_s = best_path.travel_time_s(
+        status.free_at_node, snapshot.mine.load_zones[shovel.zone].node, loaded=False
+    )
+    # Always allow the nearest shovel, however far it is, so the restriction
+    # never leaves a working truck with no legal destination.
+    return this_haul_s <= max(sh_param * max(reachable), min(reachable))
 
 
 def plan_tracking_destination(

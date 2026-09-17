@@ -9,6 +9,7 @@ from dispatch_engine.domain.mine import ZoneId
 from dispatch_engine.domain.snapshot import MineSnapshot, TruckStatus
 from dispatch_engine.policies.common import (
     arrival_at_shovel_s,
+    dispatchable_candidates,
     plan_tracking_destination,
     shovel_free_at_s,
 )
@@ -33,6 +34,9 @@ class NeediestShovelPolicy:
     # idle time is not caused by dispatching and raising this just piles trucks
     # into queues at the busiest shovel for no gain.
     shovel_idle_weight: float = 1.0
+    # SH_PARAM: a haul counts as short when it is within this fraction of the
+    # longest haul on offer. Only bites on trucks restricted to short hauls.
+    sh_param: float = 0.5
     # Weight on the cumulative shortfall against plan. Comparing only the trucks
     # in flight against the trucks required is proportional control on a stock:
     # with a discrete fleet the stock deficit settles at an integer allocation
@@ -62,11 +66,9 @@ class NeediestShovelPolicy:
                 return None
             shovel, need_t = ranked[0]
 
-            candidates = [
-                status
-                for status in snapshot.candidates_for(shovel.id)
-                if status.truck.id in pending
-            ]
+            candidates = dispatchable_candidates(
+                self.best_path, snapshot, shovel, pending, self.sh_param
+            )
             if not candidates:
                 skipped.add(shovel.id)
                 continue
@@ -84,7 +86,7 @@ class NeediestShovelPolicy:
 
             # Tentatively assign the other truck and carry on, as the procedure
             # does: only the requesting truck's assignment is ever confirmed.
-            committed_t[shovel.id] += chosen.truck.payload_t
+            committed_t[shovel.id] += snapshot.effective_payload_t(chosen.truck.id)
             free_at_s[shovel.id] = max(free_at_s[shovel.id], arrival_s) + shovel.load_time_s(
                 chosen.truck
             )
