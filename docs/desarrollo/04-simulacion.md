@@ -58,9 +58,9 @@ medio construir. Se cambió a construir `BestPath` y la política primero y pasa
 - **`free_at_s` de un camión viajando cargado estima llegada + tiempo de descarga**, sin considerar
   una eventual cola en la descarga. Con las descargas holgadas del escenario de juguete el error es
   nulo; con una chancadora saturada sería optimista.
-- **Todo es determinista**: no hay fallas de equipo, demoras, cambios de turno ni variabilidad en
-  tiempos de carga o viaje. Los códigos de estado (`operativo`, `demora`, `standby`, `malogrado`)
-  existen en el dominio pero la simulación solo usa `operativo` y `standby`.
+- **Todo es determinista**: los tiempos de carga y viaje no tienen variabilidad, y las paradas de
+  pala son programadas, no estocásticas (ver [06](06-replanificacion.md)). No hay fallas de camión ni
+  cambios de turno.
 - **Sin congestión en las vías**: los tiempos de viaje no dependen de cuántos camiones circulan.
 
 ## Verificación

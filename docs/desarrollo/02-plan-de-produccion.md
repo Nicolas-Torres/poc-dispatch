@@ -86,9 +86,9 @@ Comparado contra el plan estático, a igual tonelaje total movido (la flota mand
 
 ## Limitaciones
 
-- **El LP se resuelve una sola vez, al inicio.** La literatura lo describe re-resolviéndose cuando
-  cambian las condiciones (pala en falla, cambio de material, camión que entra o sale). Falta el
-  disparador de replanificación.
+- **Solo se re-resuelve ante paradas de pala** (ver [06](06-replanificacion.md)). Faltan los otros
+  disparadores que menciona la literatura: cambio de material en un banco, camión que entra o sale de
+  flota.
 - **La literatura describe dos LP débilmente acoplados**; acá hay uno solo.
 - **El destino de descarga todavía lo elige la simulación por cercanía**, aunque el LP ya calcula
   flujo por ruta (y por lo tanto por destino). Conectar la decisión de destino al plan es el paso
