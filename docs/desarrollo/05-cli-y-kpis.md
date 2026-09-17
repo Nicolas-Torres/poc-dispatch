@@ -12,7 +12,10 @@ uv run dispatch-cli plan --scenario toy                          # etapa 2: fluj
 uv run dispatch-cli run --scenario toy --hours 2                 # corrida con plan LP
 uv run dispatch-cli run --scenario toy --hours 2 --plan static --horizon-min 45
 uv run dispatch-cli run --scenario toy --hours 2 --shovel-idle-weight 2
+uv run dispatch-cli run --scenario mi-mina.yaml --export-events ciclos.csv
 ```
+
+Los escenarios propios y la persistencia del log están en [08](08-escenarios-en-archivo.md).
 
 Salida de una corrida de 2 horas sobre la mina de juguete:
 
@@ -79,9 +82,6 @@ del CLI quedó restringida a ASCII.
 
 ## Consideraciones
 
-- **El log de eventos solo vive en memoria.** Para analizar corridas o comparar políticas hará falta
-  persistirlo (CSV o parquet) — es además la puerta de entrada natural para comparar contra datos
-  reales de un dispatch.
 - **No hay semilla ni aleatoriedad**: la corrida es determinista, así que dos ejecuciones idénticas
   dan el mismo resultado. Cuando se agregue variabilidad habrá que exponer `--seed` y reportar los
   KPIs sobre varias réplicas.

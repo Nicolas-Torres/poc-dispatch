@@ -13,6 +13,7 @@ problemas aparecieron en el camino.
 | [05 — CLI y KPIs](05-cli-y-kpis.md) | Entrypoint, log de eventos e indicadores |
 | [06 — Replanificación reactiva](06-replanificacion.md) | Paradas de pala, re-solución del LP y redespacho |
 | [07 — Destinos que salen del plan](07-destinos-planificados.md) | Reparto de destinos por ruta y ley entregada |
+| [08 — Minas en archivo](08-escenarios-en-archivo.md) | Escenarios YAML/JSON y log de ciclos en CSV |
 
 ## Estado actual
 
@@ -31,6 +32,7 @@ los camiones contra ese plan.
 - Destinos de descarga elegidos siguiendo el reparto por ruta del plan, con la ley entregada medida
   contra la ventana de mezcla.
 - Intervención manual del despachador (fijar camión a pala, excluir equipos).
+- Minas propias definidas en YAML/JSON y log de ciclos persistido a CSV.
 
 **Lo que falta**
 
@@ -38,7 +40,6 @@ los camiones contra ese plan.
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
 - Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
 - Variabilidad estocástica: hoy las paradas son deterministas y programadas.
-- Persistencia del log de eventos.
 
 ## Cómo correrlo
 
@@ -51,4 +52,7 @@ uv run dispatch-cli run --scenario toy --hours 2               # corrida con pla
 uv run dispatch-cli run --scenario toy --hours 2 --plan static # comparación con targets fijos
 uv run dispatch-cli run --scenario toy-failure --hours 2       # con una pala caída 40 min
 uv run dispatch-cli run --scenario toy-stockpile --hours 4     # dos destinos para el mineral
+
+uv run dispatch-cli export-scenario --scenario toy --out mi-mina.yaml   # para editar la tuya
+uv run dispatch-cli run --scenario mi-mina.yaml --export-events ciclos.csv
 ```

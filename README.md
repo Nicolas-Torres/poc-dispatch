@@ -149,6 +149,29 @@ Corriendo lo mismo con `--plan static`, que no tiene opinión sobre destinos y c
 cercano, **todo el mineral termina en el stockpile y la planta queda en cero**. Elegir el destino por
 cercanía no es una aproximación algo peor: rompe el objetivo del plan.
 
+### Tu propia mina
+
+Los escenarios de arriba vienen incorporados, pero la idea es simular una mina cualquiera. Se exporta
+uno que funcione, se edita y se corre:
+
+```bash
+uv run dispatch-cli export-scenario --scenario toy --out mi-mina.yaml
+uv run dispatch-cli run --scenario mi-mina.yaml --hours 8 --export-events ciclos.csv
+```
+
+El archivo declara la red de caminos, las zonas de carga con sus leyes, las palas, los destinos, la
+flota, las ventanas de mezcla y las paradas programadas. Pasa por la misma validación que los
+escenarios incorporados, así que un nodo colgante o un material sin destino se reportan antes de
+empezar a simular, no a mitad de la corrida.
+
+El CSV de eventos lleva el ciclo completo con la razón de cada decisión, que es la base histórica de
+la que salen los KPIs de acarreo:
+
+```
+time_s,kind,truck_id,shovel_id,dump_id,zone_id,payload_t,detail
+0.000,assigned,CAT01,SH01,,,0,"neediest shovel, 704 t behind plan"
+```
+
 ## Estructura
 
 Workspace de uv con tres miembros. La dirección de dependencias es estricta y es lo que mantiene el
@@ -188,7 +211,7 @@ uv run ruff check . && uv run ruff format .
 | Grafo y rutas | `networkx` |
 | Solver LP | `ortools` (GLOP) |
 | Simulación de eventos discretos | `simpy` |
-| Escenarios y validación | `pydantic` |
+| Escenarios y validación | `pydantic`, `pyyaml` |
 | CLI | `typer` |
 | Tests / lint | `pytest`, `ruff` |
 
@@ -205,7 +228,6 @@ de importancia:
 - Que la decisión de destino mire la cola en la descarga, no solo la adhesión al plan.
 - Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 - Variabilidad estocástica y fallas de camión; hoy las paradas son deterministas y programadas.
-- Persistir el log de eventos para analizar corridas y comparar políticas.
 
 ## Documentación
 
