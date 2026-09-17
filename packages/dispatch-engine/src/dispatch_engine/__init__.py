@@ -13,6 +13,7 @@ from dispatch_engine.lp import (
     RouteFlow,
     solve_production_plan,
 )
+from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.policy import DispatchPolicy
 from dispatch_engine.production_plan import ProductionPlan, StaticProductionPlan
@@ -24,6 +25,7 @@ __all__ = [
     "CycleState",
     "DispatchPolicy",
     "DumpZone",
+    "EarliestShovelPolicy",
     "Edge",
     "FleetType",
     "InfeasiblePlanError",

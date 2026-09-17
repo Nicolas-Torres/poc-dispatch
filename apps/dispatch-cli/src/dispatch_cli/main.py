@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -7,6 +8,8 @@ from typing import Annotated
 import typer
 from dispatch_engine.best_path import BestPath
 from dispatch_engine.domain.equipment import ShovelId
+from dispatch_engine.lp import BlendTarget
+from dispatch_engine.policies.earliest_shovel import EarliestShovelPolicy
 from dispatch_engine.policies.neediest_shovel import NeediestShovelPolicy
 from dispatch_engine.policy import DispatchPolicy
 from dispatch_engine.production_plan import ProductionPlan
@@ -23,6 +26,15 @@ from mine_sim.simulation import PlanProvider, PolicyFactory, Simulation
 from pydantic import ValidationError
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+POLICIES = ("neediest", "earliest")
+
+PolicyOption = Annotated[
+    str,
+    typer.Option(
+        help="Assignment strategy: 'neediest' follows the plan, 'earliest' is the myopic baseline."
+    ),
+]
 
 PlanOption = Annotated[
     str, typer.Option("--plan", help="Production plan: 'lp' solves stage 2, 'static' uses targets.")
@@ -82,6 +94,7 @@ def run(
     scenario: ScenarioOption = "toy",
     hours: Annotated[float, typer.Option(help="Simulated hours to run.")] = 2.0,
     plan: PlanOption = "lp",
+    policy: PolicyOption = "neediest",
     horizon_min: HorizonOption = 30.0,
     shovel_idle_weight: Annotated[
         float, typer.Option(help="Weight of shovel idle time against truck queueing.")
@@ -96,12 +109,12 @@ def run(
 
     simulation = Simulation(
         built,
-        _policy_factory(best_path, shovel_idle_weight),
+        _policy_factory(policy, best_path, shovel_idle_weight),
         plan_provider=_plan_provider(plan, built, best_path, horizon_min),
         best_path=best_path,
     )
     kpis = simulation.run(until_s=hours * 3600.0)
-    _report(built, kpis, simulation.plan, plan)
+    _report(built, kpis, simulation.plan, f"{plan} plan, {policy} policy")
 
     if export_events is not None:
         simulation.log.to_csv(export_events)
@@ -133,13 +146,100 @@ def _scenario(name: str) -> Scenario:
     return _spec(name).build()
 
 
-def _policy_factory(best_path: BestPath, shovel_idle_weight: float) -> PolicyFactory:
-    def build(plan: ProductionPlan) -> DispatchPolicy:
-        return NeediestShovelPolicy(
-            best_path=best_path, plan=plan, shovel_idle_weight=shovel_idle_weight
-        )
+@app.command()
+def compare(
+    scenario: ScenarioOption = "toy-stockpile",
+    hours: Annotated[float, typer.Option(help="Simulated hours to run.")] = 4.0,
+) -> None:
+    """Run every policy on the same mine and fleet, and compare what they achieve."""
+    built = _scenario(scenario)
+    best_path = BestPath(built.mine.network)
+    provider = _plan_provider("lp", built, best_path, horizon_min=30.0)
 
-    return build
+    results = {}
+    for name in POLICIES:
+        simulation = Simulation(
+            built,
+            _policy_factory(name, best_path, shovel_idle_weight=1.0),
+            plan_provider=provider,
+            best_path=best_path,
+        )
+        results[name] = simulation.run(until_s=hours * 3600.0)
+
+    typer.echo(f"scenario {built.name} - {hours:.1f} h - lp plan\n")
+    header = "  metric                " + "".join(f"{name:>12}" for name in POLICIES)
+    typer.echo(header)
+    _compare_row("tonnes moved", results, lambda kpis: f"{kpis.tonnes_total:,.0f}")
+    _compare_row("plan value", results, lambda kpis: f"{_realised_value(built, kpis):,.0f}")
+    _compare_row("cycles", results, lambda kpis: f"{kpis.cycles}")
+    _compare_row(
+        "truck queueing (min)", results, lambda kpis: f"{kpis.truck_queue_time_s / 60:,.1f}"
+    )
+    _compare_row(
+        "shovel idle (min)",
+        results,
+        lambda kpis: f"{sum(shovel.idle_time_s for shovel in kpis.shovels) / 60:,.0f}",
+    )
+    for target in built.plan_inputs.blend_targets:
+        label = f"{target.dump_zone_id} {target.element}"
+        _compare_row(
+            label,
+            results,
+            lambda kpis, target=target: f"{_delivered_grade(built, kpis, target):.3f}",
+        )
+        low = "-" if target.min_grade is None else f"{target.min_grade:.2f}"
+        high = "-" if target.max_grade is None else f"{target.max_grade:.2f}"
+        typer.echo(f"  {'  window':<22}{low + ' - ' + high:>12}")
+
+
+def _compare_row(label: str, results: dict[str, Kpis], value: Callable[[Kpis], str]) -> None:
+    cells = "".join(f"{value(results[name]):>12}" for name in POLICIES)
+    typer.echo(f"  {label:<22}{cells}")
+
+
+def _realised_value(scenario: Scenario, kpis: Kpis) -> float:
+    """What the run actually earned under the objective the LP maximises."""
+    shovel_by_zone = {shovel.zone: shovel_id for shovel_id, shovel in scenario.shovels.items()}
+    inputs = scenario.plan_inputs
+    return sum(
+        tonnes
+        * inputs.values_per_tonne.get(shovel_by_zone[zone_id], 1.0)
+        * inputs.dump_values_per_tonne.get(dump_id, 1.0)
+        for (zone_id, dump_id), tonnes in kpis.tonnes_by_route.items()
+    )
+
+
+def _delivered_grade(scenario: Scenario, kpis: Kpis, target: BlendTarget) -> float:
+    tonnes = 0.0
+    graded = 0.0
+    for (zone_id, dump_id), route_t in kpis.tonnes_by_route.items():
+        if dump_id != target.dump_zone_id:
+            continue
+        tonnes += route_t
+        graded += route_t * scenario.mine.load_zones[zone_id].material.grades.get(
+            target.element, 0.0
+        )
+    return graded / tonnes if tonnes else 0.0
+
+
+def _policy_factory(kind: str, best_path: BestPath, shovel_idle_weight: float) -> PolicyFactory:
+    if kind == "neediest":
+
+        def dispatch_like(plan: ProductionPlan) -> DispatchPolicy:
+            return NeediestShovelPolicy(
+                best_path=best_path, plan=plan, shovel_idle_weight=shovel_idle_weight
+            )
+
+        return dispatch_like
+
+    if kind == "earliest":
+
+        def myopic(plan: ProductionPlan) -> DispatchPolicy:
+            return EarliestShovelPolicy(best_path=best_path, plan=plan)
+
+        return myopic
+
+    raise typer.BadParameter(f"unknown policy {kind!r}, try: {', '.join(POLICIES)}")
 
 
 def _plan_provider(
@@ -172,28 +272,19 @@ def _report_blends(scenario: Scenario, kpis: Kpis) -> None:
 
     typer.echo("\n  destination   element   delivered   window")
     for target in scenario.plan_inputs.blend_targets:
-        tonnes = 0.0
-        graded = 0.0
-        for (zone_id, dump_id), route_t in kpis.tonnes_by_route.items():
-            if dump_id != target.dump_zone_id:
-                continue
-            tonnes += route_t
-            graded += route_t * scenario.mine.load_zones[zone_id].material.grades.get(
-                target.element, 0.0
-            )
-        if tonnes == 0.0:
+        delivered = _delivered_grade(scenario, kpis, target)
+        if delivered == 0.0:
             continue
         low = "-" if target.min_grade is None else f"{target.min_grade:.2f}"
         high = "-" if target.max_grade is None else f"{target.max_grade:.2f}"
         typer.echo(
-            f"  {target.dump_zone_id:<13} {target.element:<9} {graded / tonnes:>9.3f}"
-            f"   {low} - {high}"
+            f"  {target.dump_zone_id:<13} {target.element:<9} {delivered:>9.3f}   {low} - {high}"
         )
 
 
-def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, plan_kind: str) -> None:
+def _report(scenario: Scenario, kpis: Kpis, plan: ProductionPlan, setup: str) -> None:
     # Plain ASCII only: Windows consoles default to cp1252 and mangle dashes.
-    typer.echo(f"scenario {scenario.name} - {kpis.horizon_s / 3600:.1f} h - {plan_kind} plan")
+    typer.echo(f"scenario {scenario.name} - {kpis.horizon_s / 3600:.1f} h - {setup}")
     typer.echo(
         f"  tonnes moved    {kpis.tonnes_total:>10,.0f} t  ({kpis.tonnes_per_hour:,.0f} t/h)"
     )
