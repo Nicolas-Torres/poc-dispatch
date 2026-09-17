@@ -1,0 +1,3 @@
+- Desarrollar un sistema basado en dispath (leer los 2 archivos de: docs\contexto\ )
+- Este sistema debe ser usable y customizable en la medida que un sistema dispatch real lo permita
+- Este sistema será usado para simular una mina digital (un gemelo digital de una mina cualquiera)
