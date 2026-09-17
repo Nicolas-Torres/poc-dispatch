@@ -28,8 +28,10 @@ class NeediestShovelPolicy:
 
     best_path: BestPath
     plan: ProductionPlan
-    # Shovel idle time is the scarcer resource in most operations; raise this to
-    # bias the engine towards keeping shovels busy at the cost of truck queueing.
+    # Buys shovel idle time with truck queueing. Only worth raising when the
+    # shovels are the binding constraint: where the fleet is the one short, their
+    # idle time is not caused by dispatching and raising this just piles trucks
+    # into queues at the busiest shovel for no gain.
     shovel_idle_weight: float = 1.0
 
     def assign(self, snapshot: MineSnapshot, truck_id: TruckId) -> Assignment | None:

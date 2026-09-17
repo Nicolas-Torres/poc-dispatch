@@ -22,12 +22,26 @@ class FleetType:
 
 @dataclass(frozen=True, slots=True)
 class BlendTarget:
-    """Grade window the blend delivered to a destination has to stay inside."""
+    """Grade window the blend delivered to a destination has to stay inside.
+
+    A value-maximising LP parks its solution on whichever constraints bind, so
+    whenever this window is one of them the plan lands exactly on the limit and
+    leaves the operation no room to drift before it is out of spec. `margin`
+    shrinks the window the plan is solved against, while the window itself stays
+    the spec the delivered blend is judged by.
+    """
 
     dump_zone_id: ZoneId
     element: str
     min_grade: float | None = None
     max_grade: float | None = None
+    margin: float = 0.0
+
+    def planning_limits(self) -> tuple[float | None, float | None]:
+        return (
+            None if self.min_grade is None else self.min_grade + self.margin,
+            None if self.max_grade is None else self.max_grade - self.margin,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,15 +252,16 @@ def _add_blend_constraints(
     feeding = [
         (var, candidate) for var, candidate in routes if candidate.dump.id == target.dump_zone_id
     ]
+    min_grade, max_grade = target.planning_limits()
 
-    if target.max_grade is not None:
+    if max_grade is not None:
         ceiling = solver.Constraint(-solver.infinity(), 0.0)
         for var, candidate in feeding:
             grade = candidate.zone.material.grades.get(target.element, 0.0)
-            ceiling.SetCoefficient(var, grade - target.max_grade)
+            ceiling.SetCoefficient(var, grade - max_grade)
 
-    if target.min_grade is not None:
+    if min_grade is not None:
         floor = solver.Constraint(-solver.infinity(), 0.0)
         for var, candidate in feeding:
             grade = candidate.zone.material.grades.get(target.element, 0.0)
-            floor.SetCoefficient(var, target.min_grade - grade)
+            floor.SetCoefficient(var, min_grade - grade)

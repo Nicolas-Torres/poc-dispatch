@@ -73,6 +73,9 @@ class BlendTargetSpec(BaseModel):
     element: str
     min_grade: float | None = None
     max_grade: float | None = None
+    # Shrinks the window the plan is solved against, so execution drift still
+    # lands inside the spec. Zero means the plan sits right on the limit.
+    margin: float = Field(default=0.0, ge=0)
 
 
 class DisruptionSpec(BaseModel):
@@ -168,6 +171,15 @@ class ScenarioSpec(BaseModel):
                 raise ValueError(
                     f"blend target on {blend.dump_zone!r} sets neither a floor nor a ceiling"
                 )
+            if (
+                blend.min_grade is not None
+                and blend.max_grade is not None
+                and blend.min_grade + blend.margin > blend.max_grade - blend.margin
+            ):
+                raise ValueError(
+                    f"blend margin {blend.margin} leaves no room inside the window on "
+                    f"{blend.dump_zone!r}"
+                )
         return self
 
     def build(self) -> Scenario:
@@ -262,6 +274,7 @@ class ScenarioSpec(BaseModel):
                         element=blend.element,
                         min_grade=blend.min_grade,
                         max_grade=blend.max_grade,
+                        margin=blend.margin,
                     )
                     for blend in self.blend_targets
                 ),

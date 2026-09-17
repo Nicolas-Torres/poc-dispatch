@@ -84,6 +84,28 @@ Dos comprobaciones de que el modelo está bien planteado:
 Comparado contra el plan estático, a igual tonelaje total movido (la flota manda), el LP entrega
 **3.520 t al chancador contra 2.640 t**: usa las mismas horas-camión en el material que vale más.
 
+## El plan se para sobre las restricciones, y eso tiene costo operativo
+
+Un LP que maximiza valor deja su solución **sobre** las restricciones que atan. Cuando una de ellas es
+una ventana de mezcla, el plan sale clavado en el límite: en `toy` la ley planificada da 0,800 contra
+un techo de 0,80. Eso no deja margen alguno — cualquier desvío de ejecución hacia arriba sale de
+especificación, y en una corrida de 4 horas la ley entregada dio **0,806**, afuera.
+
+`BlendTarget.margin` resuelve el plan contra una ventana encogida mientras la ventana original sigue
+siendo la especificación con la que se juzga el resultado. Sobre `toy`:
+
+| margen | ventana de planificación | ley del plan |
+|---|---|---|
+| 0,00 | 0,60 – 0,80 | 0,800 |
+| 0,03 | 0,63 – 0,77 | 0,770 |
+| 0,05 | 0,65 – 0,75 | 0,750 |
+
+**Pero la operación no responde de forma continua.** Con margen 0,03 la corrida entregó exactamente lo
+mismo que sin margen; recién con 0,05 cambió. La causa está en la etapa 3: el ranking de necesidad es
+discreto y solo importa el **orden** de las palas, no cuánto están separadas. Un cambio de plan que no
+reordena el ranking no produce ningún cambio de comportamiento. Con margen 0,05 SH02 pasa por encima
+de SH03 y ahí el resultado salta. Está anotado en [03](03-asignacion-tiempo-real.md).
+
 ## Limitaciones
 
 - **Solo se re-resuelve ante paradas de pala** (ver [06](06-replanificacion.md)). Faltan los otros

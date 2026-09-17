@@ -63,6 +63,19 @@ código, es parte de lo que "customizable" significa acá.
 `ProductionPlan`, así que se lee directamente cuánto se está cumpliendo y dónde se está quedando
 corto — ver el análisis de adhesión en [03](03-asignacion-tiempo-real.md).
 
+**El material cargado y todavía en viaje se reporta aparte.** `tonnes_total` cuenta solo eventos
+`dump_end`, así que al cortar el horizonte queda afuera todo lo que está arriba de un camión — con 6
+camiones, hasta 1.320 t. Sin separarlo, **toda corrida corta parece incumplir el plan**: en `toy` a
+4 horas se veía un déficit del 10 % que resultó ser íntegramente truncación (10.780 t volteadas +
+1.100 t en tránsito contra un plan de 11.788 t, o sea 100 % de adhesión). `Kpis.tonnes_moved` suma
+las dos cosas; la salida las muestra en líneas separadas porque son cosas distintas: una es
+producción entregada y la otra es trabajo hecho pero no cerrado.
+
+**Una ley fuera de la ventana se marca, no se deja a la vista del lector.** La salida agrega
+`OUT OF SPEC` cuando la ley entregada cae afuera. Salió de una corrida donde el número era 0,806
+contra un techo de 0,80: la clase de desvío que se pasa por alto leyendo una tabla y que la planta
+rechaza igual.
+
 **La ley entregada se reporta contra la ventana con la que se resolvió el plan.** Es el indicador que
 cierra el círculo: el LP promete una mezcla, la operación entrega otra, y la diferencia se ve. Se
 calcula desde `tonnes_by_route` y las leyes del escenario, no desde el plan — ver
