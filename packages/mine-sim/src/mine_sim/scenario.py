@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
+import yaml
 from dispatch_engine.domain.equipment import Shovel, ShovelId, StatusCode, Truck, TruckId
 from dispatch_engine.domain.mine import (
     DumpZone,
@@ -454,3 +457,30 @@ SCENARIOS = {
     "toy-failure": toy_mine_with_failure,
     "toy-stockpile": toy_mine_with_stockpile,
 }
+
+
+def load_scenario_spec(path: Path) -> ScenarioSpec:
+    """Read a mine definition from a YAML or JSON file.
+
+    The file is validated by the same model the built-in scenarios go through,
+    so a mistake in a hand-written mine is reported the same way.
+    """
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        document = json.loads(text)
+    elif path.suffix.lower() in {".yaml", ".yml"}:
+        document = yaml.safe_load(text)
+    else:
+        raise ValueError(f"unsupported scenario format {path.suffix!r}, use .yaml or .json")
+    return ScenarioSpec.model_validate(document)
+
+
+def dump_scenario_spec(spec: ScenarioSpec, path: Path) -> None:
+    """Write a mine definition out, so a built-in can seed a hand-edited one."""
+    document = spec.model_dump(exclude_defaults=True)
+    if path.suffix.lower() == ".json":
+        path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+    elif path.suffix.lower() in {".yaml", ".yml"}:
+        path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    else:
+        raise ValueError(f"unsupported scenario format {path.suffix!r}, use .yaml or .json")
