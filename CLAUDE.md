@@ -138,6 +138,3 @@ La regla existe para repetir lo que funcionó y evitar lo que casi falla:
   midió, **empeoró 5 %** y se revirtió.
 - El KPI de tonelaje truncado y la ley fuera de especificación salieron de **correr** la herramienta,
   no de leer el código.
-
-Cada dos o tres PRs, pedirle al usuario que corra un escenario él mismo: varios de los hallazgos más
-útiles aparecieron al leer juntos una salida real.
