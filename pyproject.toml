@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "dispatch-cli",
     "dispatch-engine",
+    "dispatch-web",
     "mine-sim",
 ]
 
@@ -17,11 +18,14 @@ members = ["packages/*", "apps/*"]
 
 [tool.uv.sources]
 dispatch-cli = { workspace = true }
+dispatch-web = { workspace = true }
 dispatch-engine = { workspace = true }
 mine-sim = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "httpx2",
+    "playwright>=1.49",
     "pytest>=8.3",
     "ruff>=0.14",
 ]

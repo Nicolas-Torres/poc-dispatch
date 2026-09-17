@@ -9,3 +9,6 @@ dist/
 .coverage
 htmlcov/
 docs/temp/**
+
+# Scenario files exported for local experimentation
+mi-mina.yaml
