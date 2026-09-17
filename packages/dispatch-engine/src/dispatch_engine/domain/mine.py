@@ -59,6 +59,9 @@ class DumpZone:
     accepts_ore: bool
     tipping_bays: int = 1
     dump_time_s: float = 60.0
+    # Intake limit of the destination itself (crusher throughput). None means the
+    # only limit is how fast trucks can tip.
+    capacity_tph: float | None = None
 
     def accepts(self, material: Material) -> bool:
         return material.is_ore == self.accepts_ore

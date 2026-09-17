@@ -22,10 +22,6 @@ class NeediestShovelPolicy:
 
     best_path: BestPath
     plan: ProductionPlan
-    # Window over which required haulage is measured. Stands in for the truck
-    # resources the LP derives from its flow rates: rate x window = tonnes that
-    # must be committed to a shovel to keep it fed.
-    horizon_s: float = 1800.0
     # Shovel idle time is the scarcer resource in most operations; raise this to
     # bias the engine towards keeping shovels busy at the cost of truck queueing.
     shovel_idle_weight: float = 1.0
@@ -87,7 +83,7 @@ class NeediestShovelPolicy:
         skipped: set[ShovelId],
     ) -> list[tuple[Shovel, float]]:
         needs = [
-            (shovel, self.plan.required_rate_tph(sid) * self.horizon_s / 3600.0 - committed_t[sid])
+            (shovel, self.plan.required_haulage_t(sid) - committed_t[sid])
             for sid, shovel in snapshot.shovels.items()
             if sid not in skipped
         ]
