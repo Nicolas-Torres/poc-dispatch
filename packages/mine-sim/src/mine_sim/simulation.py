@@ -99,7 +99,17 @@ class Simulation:
             dump.id: simpy.Resource(self.env, capacity=dump.tipping_bays)
             for dump in scenario.mine.dump_zones.values()
         }
+        # A destination's rated capacity is a real limit, not just a planning
+        # one: the crusher cannot chew faster than it chews. Tipping bays are the
+        # physical act of tipping; this gate is the processing line behind them.
+        self._intake_free_s: dict[ZoneId, float] = dict.fromkeys(scenario.mine.dump_zones, 0.0)
         self._delivered_t: dict[tuple[ZoneId, ZoneId], float] = {}
+        # Plan ledger: tonnes the plan has promised from each shovel so far, and
+        # tonnes it has actually dug. The difference is what gives the assignment
+        # an integral term instead of chasing only the instantaneous stock.
+        self._planned_t: dict[ShovelId, float] = dict.fromkeys(scenario.shovels, 0.0)
+        self._dug_t: dict[ShovelId, float] = dict.fromkeys(scenario.shovels, 0.0)
+        self._ledger_since_s: float = 0.0
         self._last_dispatch_s: dict[ShovelId, float] = {}
         self._trucks = {
             truck.id: _TruckRuntime(
@@ -122,6 +132,38 @@ class Simulation:
             self.env.process(self._shovel_failures(shovel_id, reliability))
         self.env.run(until=until_s)
         return self.log.kpis(horizon_s=until_s, shovel_ids=list(self.scenario.shovels))
+
+    def _accrue_plan(self) -> None:
+        """Advance the promised tonnage to now, at the rate the plan asks for.
+
+        Called before the plan is read and before it is replaced, so a plan only
+        ever accrues over the window it was actually in force — a shovel that is
+        out of service has a required rate of zero and stops accruing, which is
+        what keeps an outage from building a debt nobody can repay.
+        """
+        elapsed_h = (self.env.now - self._ledger_since_s) / 3600.0
+        if elapsed_h <= 0.0:
+            return
+        for shovel_id in self._planned_t:
+            self._planned_t[shovel_id] += self.plan.required_rate_tph(shovel_id) * elapsed_h
+        self._ledger_since_s = self.env.now
+
+    def _admit_to_intake(
+        self, dump_id: ZoneId, capacity_tph: float | None, payload_t: float
+    ) -> float:
+        """When the destination can accept this load, given its rated capacity.
+
+        Without this the twin lets a crusher rated at 2,200 t/h swallow whatever
+        the fleet brings — two bays at a minute a tip is 26,400 t/h — so a policy
+        that over-delivers to it books value for tonnes nobody could process.
+        Loads are admitted at the rated rate and the wait shows up as dump
+        queueing, which is where a real operation feels it.
+        """
+        if capacity_tph is None:
+            return self.env.now
+        admitted_s = max(self.env.now, self._intake_free_s[dump_id])
+        self._intake_free_s[dump_id] = admitted_s + payload_t / capacity_tph * 3600.0
+        return admitted_s
 
     def _sample_s(self, nominal_s: float, cv: float) -> float:
         """Draw an actual duration around a nominal one.
@@ -160,6 +202,7 @@ class Simulation:
             # rather than asking the LP to allocate a fleet of zero.
             return
 
+        self._accrue_plan()
         self.plan = self._plan_provider(
             PlanConditions(
                 unavailable_shovels=frozenset(self._unavailable),
@@ -179,6 +222,7 @@ class Simulation:
 
     def _snapshot(self) -> MineSnapshot:
         now_s = self.env.now
+        self._accrue_plan()
         return MineSnapshot(
             now_s=now_s,
             mine=self.scenario.mine,
@@ -203,6 +247,10 @@ class Simulation:
                     assigned_dump=runtime.assigned_dump,
                 )
                 for runtime in self._trucks.values()
+            },
+            plan_shortfall_t={
+                shovel_id: self._planned_t[shovel_id] - self._dug_t[shovel_id]
+                for shovel_id in self._planned_t
             },
             overrides=self.overrides,
             delivered_t=self._delivered_t,
@@ -344,6 +392,7 @@ class Simulation:
                     shovel_id=shovel.id,
                     payload_t=truck.payload_t,
                 )
+                self._dug_t[shovel.id] += truck.payload_t
 
             destination = self.policy.choose_destination(self._snapshot(), truck.id, zone.id)
             dump = self.scenario.mine.dump_zones[destination.dump_zone_id]
@@ -367,6 +416,10 @@ class Simulation:
                 dump_id=dump.id,
                 zone_id=zone.id,
             )
+            admitted_s = self._admit_to_intake(dump.id, dump.capacity_tph, truck.payload_t)
+            if admitted_s > env.now:
+                yield env.timeout(admitted_s - env.now)
+
             with self._dump_resources[dump.id].request() as request:
                 yield request
                 runtime.state = CycleState.DUMPING
