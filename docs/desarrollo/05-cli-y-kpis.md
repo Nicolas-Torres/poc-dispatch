@@ -25,9 +25,13 @@ scenario toy - 2.0 h - lp plan
   dump queueing          0.0 min
   standby events           0
 
-  destination            tonnes
-  crusher                 3,520
-  waste_dump              1,760
+  route                      tonnes      t/h   plan t/h
+  zone_n -> crusher           2,640    1,320      1,610
+  zone_s -> crusher             880      440        537
+  zone_w -> waste_dump        1,760      880        800
+
+  destination   element   delivered   window
+  crusher       cu            0.800   0.60 - 0.80
 
   shovel   loads    tonnes      t/h   plan t/h   util
   SH01        13     2,860    1,430      1,610     55%
@@ -52,10 +56,14 @@ targets fijos, `--horizon-min` ajusta la ventana del plan estático y `--shovel-
 penalidad de la etapa 3. Poder comparar dos planes sobre la misma mina y la misma flota, sin tocar
 código, es parte de lo que "customizable" significa acá.
 
-**La tabla muestra plan contra real.** La columna `plan t/h` sale de
-`ProductionPlan.required_rate_tph`, así que se lee directamente cuánto se está cumpliendo el plan y
-qué pala se está quedando corta — ver el análisis de adhesión en
-[03](03-asignacion-tiempo-real.md).
+**Las tablas muestran plan contra real, a nivel de ruta y de pala.** La columna `plan t/h` sale del
+`ProductionPlan`, así que se lee directamente cuánto se está cumpliendo y dónde se está quedando
+corto — ver el análisis de adhesión en [03](03-asignacion-tiempo-real.md).
+
+**La ley entregada se reporta contra la ventana con la que se resolvió el plan.** Es el indicador que
+cierra el círculo: el LP promete una mezcla, la operación entrega otra, y la diferencia se ve. Se
+calcula desde `tonnes_by_route` y las leyes del escenario, no desde el plan — ver
+[07](07-destinos-planificados.md).
 
 **`Annotated[...]` para las opciones de typer** en vez de valores por defecto con `typer.Option(...)`,
 que ruff marca como llamada en argumento por defecto (B008).
