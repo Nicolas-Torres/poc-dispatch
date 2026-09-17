@@ -29,10 +29,10 @@ Y el algoritmo sigue el mismo bucle:
 
 ## Decisiones
 
-**Ventana de horizonte como sustituto del LP.** La necesidad se mide en toneladas:
-`tasa_requerida_tph × horizonte / 3600 − comprometido_t`, con un horizonte por defecto de 30 minutos
-(configurable con `--horizon-min`). Es el reemplazo provisorio del término que el LP derivará del
-tiempo de ciclo de cada ruta. Ver la limitación importante más abajo.
+**La necesidad se mide en toneladas y la aporta el plan.** `necesidad = plan.required_haulage_t(pala)
+− comprometido_t`. La política ya no sabe cómo se calcula ese requerimiento: `LpProductionPlan` lo
+deriva del tiempo de ciclo (ley de Little) y `StaticProductionPlan` lo aproxima con una ventana fija
+de 30 minutos (`--horizon-min`). Ese corte es lo que permitió meter el LP sin tocar esta etapa.
 
 **Las palas por encima del plan siguen en el ranking, con necesidad negativa.** Si se las excluyera,
 un camión que pide destino cuando todas están servidas se quedaría sin asignación y entraría en
@@ -50,30 +50,32 @@ ranking y devuelve `reason="locked by dispatcher"`.
 **La asignación explica por qué.** `Assignment` lleva `reason` y `penalty_s`. Un despacho que no se
 puede explicar es un despacho que la operación termina desactivando.
 
-## Limitación importante: el reparto no sigue la proporción de los targets
+## El sesgo de reparto y cómo lo corrigió el LP
 
-Corriendo el escenario de juguete 2 horas, con targets 1400 / 1000 / 1600 t/h (35 % / 25 % / 40 %),
-el resultado fue:
+**El problema (con plan estático).** Midiendo la necesidad como `tasa × ventana fija`, el acarreo
+comprometido cuenta solo los camiones asignados *en ese instante*: cuando un camión sale cargado de
+la pala deja de contar de inmediato, así que una pala con ciclo corto recupera necesidad más rápido
+y vuelve a encabezar el ranking. El resultado era una adhesión al plan muy despareja.
 
-| Pala | Target | Movido | Real |
-|---|---|---|---|
-| SH01 | 35 % | 1.980 t | 37,5 % |
-| SH02 | 25 % | 880 t | 16,7 % |
-| SH03 | 40 % | 2.860 t | 54,2 % |
+**La corrección.** El LP entrega el requerimiento derivado del tiempo de ciclo, no de una ventana
+arbitraria: una pala lejana necesita *más* toneladas comprometidas para sostener la misma tasa,
+justamente porque sus camiones tardan más en volver.
 
-**Causa.** El acarreo "asignado" cuenta solo los camiones comprometidos *en ese instante*. Cuando un
-camión sale cargado de la pala deja de contar de inmediato, así que una pala con ciclo corto
-recupera necesidad más rápido y vuelve a encabezar el ranking. SH03 (estéril, la más cercana y con
-el target más alto) acumula así más asignaciones de las que le corresponden, y SH02 (la más lejana)
-queda postergada.
+Corriendo el escenario de juguete 2 horas, adhesión al plan (real ÷ planificado):
 
-**Cómo se corrige.** Derivando el requerimiento de camiones del tiempo de ciclo de cada ruta, que es
-lo que hace el LP: una pala lejana necesita *más* toneladas comprometidas para sostener la misma
-tasa, precisamente porque sus camiones tardan más en volver. Queda para la etapa 2.
+| Pala | Plan estático | Plan LP |
+|---|---|---|
+| SH01 | 990 / 1.400 = **71 %** | 1.430 / 1.610 = **89 %** |
+| SH02 | 440 / 1.000 = **44 %** | 440 / 537 = **82 %** |
+| SH03 | 1.430 / 1.600 = **89 %** | 990 / 800 = **124 %** |
 
-Nota adicional: la flota de juguete (6 × 220 t) no alcanza para la suma de los targets (4.000 t/h),
-así que todas las palas están crónicamente necesitadas. Es una situación realista — la flota suele
-ser la restricción activa — pero hace que el ranking opere siempre en régimen de escasez.
+Y a igual tonelaje total (la flota es el límite en ambos casos), el chancador recibe 3.520 t con el
+LP contra 2.640 t con el plan fijo.
+
+**Lo que queda.** La flota es discreta y el plan es continuo. SH02 necesita 256 t en vuelo, o sea
+1,16 camiones de 220 t; en la práctica sostiene 1, que rinde unas 460 t/h contra las 537 t/h del
+plan, y el excedente lo absorbe SH03 (124 %). Con una flota más grande o camiones más chicos
+respecto del plan, el redondeo pesa menos.
 
 ## Otras simplificaciones
 

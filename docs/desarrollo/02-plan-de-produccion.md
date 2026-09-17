@@ -1,49 +1,112 @@
 # 02 — Plan de producción (etapa LP)
 
-`packages/dispatch-engine/src/dispatch_engine/production_plan.py`
+`packages/dispatch-engine/src/dispatch_engine/lp.py` y `production_plan.py`
 
 ## Qué se construyó
 
-**Solo la interfaz.** El solver no está implementado todavía; esta etapa se dejó definida para que la
-etapa 3 se escribiera contra ella desde el principio.
+La etapa 2 resuelta con **OR-Tools / GLOP**: un LP que calcula el flujo ideal `x_r` en cada ruta
+(zona de carga → zona de descarga → tipo de flota), siguiendo la formulación de la patente
+US 11,187,547:
 
-```python
-class ProductionPlan(Protocol):
-    def required_rate_tph(self, shovel_id: ShovelId) -> float: ...
+```
+max  c'x
+s.a. Hx = b
+     x >= 0
 ```
 
-La implementación actual es `StaticProductionPlan`, que devuelve tasas fijas tomadas del escenario
-(`ShovelSpec.target_rate_tph`).
+- **Variables**: `x_r` en toneladas por hora, una por combinación pala × destino compatible × flota.
+- **Objetivo**: `c_r` es el valor por tonelada de la pala (`PlanInputs.values_per_tonne`). Por
+  defecto 1.0, con lo cual el LP maximiza tonelaje; con valores distintos maximiza valor.
+- **Restricciones**:
+  - capacidad de excavación de cada pala (cuadrado + carga);
+  - bahías de volteo y capacidad de recepción del destino (`DumpZone.capacity_tph`);
+  - disponibilidad de flota por tipo, en horas-camión;
+  - pisos de producción por pala (`min_rates_tph`, el compromiso de desbroce);
+  - ventanas de **blending** por destino y elemento.
+
+La interfaz que ve la etapa 3 (`ProductionPlan`) pasó a tener dos métodos:
+
+```python
+def required_rate_tph(shovel_id) -> float      # tasa objetivo
+def required_haulage_t(shovel_id) -> float     # toneladas que deben estar comprometidas
+```
 
 ## Decisiones
 
-**Definir la interfaz antes que el solver.** La etapa 3 ya consume `ProductionPlan` y nunca toca un
-`StaticProductionPlan` concreto, así que cuando entre `LpProductionPlan` con OR-Tools/GLOP la
-asignación en tiempo real no se modifica. Ese es el punto de corte que la literatura describe: el LP
-corre a intervalos, la asignación corre por camión, y lo único que cruza entre ambos son las tasas.
+**Todas las restricciones se escriben como fracción de un recurso consumida por tonelada-hora.** Una
+pala tiene 1.0 hora de pala por hora; un destino tiene `tipping_bays`; una flota tiene `n` camiones.
+Así, flotas con payloads distintos y palas con ritmos distintos componen sin casos especiales, y
+agregar un recurso nuevo es agregar una fila.
 
-**OR-Tools ya está instalado** (GLOP disponible) aunque no se use, para que el próximo hito sea solo
-escribir el modelo.
+**El requerimiento de acarreo sale de la ley de Little.** Sostener `x` t/h en una ruta cuyo ciclo
+dura `c` horas exige `x·c` toneladas en vuelo. De ahí que `required_haulage_t = rate × cycle_time`, y
+que Best Path sea **entrada obligatoria** del LP: sin tiempos de ciclo no se puede escribir la
+restricción de flota. Esto es exactamente lo que corregía el sesgo documentado en la
+[etapa 3](03-asignacion-tiempo-real.md).
 
-## Consideraciones para cuando se implemente el LP
+**El blending se linealiza sin dividir por el flujo total.** La forma natural
+(`Σ g_r x_r / Σ x_r ∈ [min, max]`) no es lineal y además explota si el destino recibe cero. Las
+restricciones equivalentes son:
 
-**La "ruta" del LP todavía no existe como tipo.** En DISPATCH una ruta es *zona de carga + zona de
-descarga + camino + registro de ley + tipo de vehículo*, y el LP resuelve el flujo `x_r` por ruta. Lo
-que hoy se llama `Route` (`domain/routing.py`) es apenas un camino sobre el grafo. Al implementar el
-LP habrá que introducir ese concepto — probablemente `PlanRoute` — y la interfaz pasará de "tasa por
-pala" a "tasa por ruta", que es lo que además permite decidir el destino de descarga (hoy resuelto
-por cercanía, ver [04](04-simulacion.md)).
+```
+Σ (g_r − max) x_r <= 0
+Σ (min − g_r) x_r <= 0
+```
 
-**El requerimiento de camiones debería derivarse del tiempo de ciclo.** La etapa 3 hoy convierte la
-tasa en toneladas usando una ventana fija (ver [03](03-asignacion-tiempo-real.md)). La formulación
-correcta relaciona flujo y tiempo de ciclo: la suma de `flujo × tiempo de ciclo` está limitada por la
-flota disponible. Ese es el término que corrige el sesgo documentado en la etapa 3.
+que además se satisfacen trivialmente cuando el flujo es cero.
 
-**Restricciones a modelar**, según los documentos de contexto: capacidad de excavación por pala,
-capacidad de recepción por destino, conservación de flujo, blending (leyes dentro de rango en la
-chancadora), prioridades entre palas y tamaño de flota por tipo.
+**`value_per_tonne` y `min_rate_tph` viven en `PlanInputs`, no en `Shovel`.** No son propiedades del
+equipo sino decisiones de planificación; mezclarlas en el dominio habría obligado a reconstruir las
+palas para replanificar.
+
+**Sin piso de producción, el plan no mueve estéril.** Con el estéril valiendo menos por tonelada que
+el mineral, el LP lo lleva a cero. El escenario de juguete le pone `min_rate_tph=800` a SH03, que es
+como se expresa un compromiso de desbroce.
+
+## Resultado en el escenario de juguete
+
+```
+  shovel   zone      destination      t/h    cycle   in flight
+  SH01     zone_n    crusher          1,610    26.3m       704 t
+  SH02     zone_s    crusher            537    28.6m       256 t
+  SH03     zone_w    waste_dump         800    27.0m       360 t
+
+  total 2,947 t/h
+```
+
+Dos comprobaciones de que el modelo está bien planteado:
+
+- **Ley de la mezcla**: `(1610×0.9 + 537×0.5) / 2147 = 0.80`, exactamente el techo de la ventana
+  `[0.6, 0.8]`. El LP se para en el vértice, como corresponde.
+- **Toneladas en vuelo**: `704 + 256 + 360 = 1.320 t = 6 camiones × 220 t`. La restricción de flota
+  queda justo activa, que es lo esperable cuando la flota es el recurso escaso.
+
+Comparado contra el plan estático, a igual tonelaje total movido (la flota manda), el LP entrega
+**3.520 t al chancador contra 2.640 t**: usa las mismas horas-camión en el material que vale más.
+
+## Limitaciones
+
+- **El LP se resuelve una sola vez, al inicio.** La literatura lo describe re-resolviéndose cuando
+  cambian las condiciones (pala en falla, cambio de material, camión que entra o sale). Falta el
+  disparador de replanificación.
+- **La literatura describe dos LP débilmente acoplados**; acá hay uno solo.
+- **El destino de descarga todavía lo elige la simulación por cercanía**, aunque el LP ya calcula
+  flujo por ruta (y por lo tanto por destino). Conectar la decisión de destino al plan es el paso
+  natural siguiente, y es lo que permite cumplir blending en la operación real y no solo en el plan.
+- **Sin costos de acarreo en el objetivo**: hoy `c_r` depende solo de la pala, no de la ruta. Un
+  objetivo más fiel restaría el costo del acarreo, que sí varía por ruta.
+- `ortools` emite tres `DeprecationWarning` de sus bindings SWIG al importarse. Son de la librería,
+  no del proyecto.
 
 ## Verificación
 
-No hay tests propios de esta etapa todavía: `StaticProductionPlan` es una búsqueda en un diccionario
-y se ejercita indirectamente en los tests de la etapa 3.
+`packages/dispatch-engine/tests/test_lp.py` cubre: que `required_haulage_t` sigue al tiempo de ciclo,
+que el tamaño de flota topea el plan, que el valor decide dónde va la flota, que la ventana de
+blending obliga a mezclar ambos bancos, que se respetan los pisos de producción y la capacidad del
+destino, y que un piso por encima de la capacidad de excavación levanta `InfeasiblePlanError`.
+
+```bash
+uv run dispatch-cli plan --scenario toy
+uv run dispatch-cli run --scenario toy --hours 2 --plan lp
+uv run dispatch-cli run --scenario toy --hours 2 --plan static   # para comparar
+```

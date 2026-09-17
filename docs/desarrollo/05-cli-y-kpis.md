@@ -4,33 +4,35 @@
 
 ## Qué se construyó
 
-Un entrypoint que corre un escenario y reporta indicadores de acarreo:
+Un entrypoint que resuelve el plan, corre un escenario y reporta indicadores de acarreo:
 
 ```bash
-uv run dispatch-cli run --scenario toy --hours 2
-uv run dispatch-cli run --scenario toy --hours 2 --horizon-min 45 --shovel-idle-weight 2
-uv run dispatch-cli scenarios
+uv run dispatch-cli scenarios                                    # escenarios disponibles
+uv run dispatch-cli plan --scenario toy                          # etapa 2: flujo por ruta
+uv run dispatch-cli run --scenario toy --hours 2                 # corrida con plan LP
+uv run dispatch-cli run --scenario toy --hours 2 --plan static --horizon-min 45
+uv run dispatch-cli run --scenario toy --hours 2 --shovel-idle-weight 2
 ```
 
 Salida de una corrida de 2 horas sobre la mina de juguete:
 
 ```
-scenario toy - 2.0 h simulated
+scenario toy - 2.0 h - lp plan
   tonnes moved         5,280 t  (2,640 t/h)
   cycles                  24
-  avg cycle time        27.8 min
-  truck queueing        20.8 min at shovels
+  avg cycle time        27.7 min
+  truck queueing        20.0 min at shovels
   dump queueing          0.0 min
   standby events           0
 
   destination            tonnes
-  crusher                 2,640
-  waste_dump              2,640
+  crusher                 3,520
+  waste_dump              1,760
 
-  shovel   loads    tonnes   engaged   idle    util
-  SH01         9     1,980     45.6m   74.4m     38%
-  SH02         4       880     24.7m   95.3m     21%
-  SH03        13     2,860     56.3m   63.7m     47%
+  shovel   loads    tonnes      t/h   plan t/h   util
+  SH01        13     2,860    1,430      1,610     55%
+  SH02         4       880      440        537     21%
+  SH03         9     1,980      990        800     32%
 ```
 
 ## Decisiones
@@ -45,9 +47,15 @@ de los KPIs de acarreo.
 está tomada durante el cuadrado, así que `engaged = load_end − spot_start`. El ocioso es el resto del
 horizonte, que es el número que interesa: tiempo de pala esperando camión.
 
-**Parámetros de la política expuestos en la línea de comandos.** `--horizon-min` y
-`--shovel-idle-weight` permiten ver el efecto de las dos palancas de la etapa 3 sin tocar código,
-que es parte de lo que "customizable" significa acá.
+**Parámetros de las etapas expuestos en la línea de comandos.** `--plan` elige entre el LP y los
+targets fijos, `--horizon-min` ajusta la ventana del plan estático y `--shovel-idle-weight` la
+penalidad de la etapa 3. Poder comparar dos planes sobre la misma mina y la misma flota, sin tocar
+código, es parte de lo que "customizable" significa acá.
+
+**La tabla muestra plan contra real.** La columna `plan t/h` sale de
+`ProductionPlan.required_rate_tph`, así que se lee directamente cuánto se está cumpliendo el plan y
+qué pala se está quedando corta — ver el análisis de adhesión en
+[03](03-asignacion-tiempo-real.md).
 
 **`Annotated[...]` para las opciones de typer** en vez de valores por defecto con `typer.Option(...)`,
 que ruff marca como llamada en argumento por defecto (B008).
