@@ -70,7 +70,9 @@ class Simulation:
         self.scenario = scenario
         self.env = simpy.Environment()
         self.log = EventLog()
-        self.overrides = overrides if overrides is not None else Overrides()
+        # An explicit argument wins, so a caller can still drive the dispatcher
+        # live; otherwise the intervention declared with the mine applies.
+        self.overrides = overrides if overrides is not None else scenario.overrides
         self.standby_retry_s = standby_retry_s
         self._rng = random.Random(seed)
 
@@ -132,6 +134,10 @@ class Simulation:
             self.env.process(self._shovel_failures(shovel_id, reliability))
         self.env.run(until=until_s)
         return self.log.kpis(horizon_s=until_s, shovel_ids=list(self.scenario.shovels))
+
+    def _restriction(self, truck_id: TruckId):
+        """The operational restriction the dispatcher has put on this truck."""
+        return self.overrides.restriction(truck_id)
 
     def _accrue_plan(self) -> None:
         """Advance the promised tonnage to now, at the rate the plan asks for.
@@ -349,9 +355,11 @@ class Simulation:
             runtime.assigned_shovel = shovel.id
             # The ETA the engine sees stays nominal: dispatch plans on expected
             # times and finds out about the deviation when the truck arrives.
-            runtime.arrive_at_shovel_s = env.now + assignment.route.travel_time_s
+            speed_factor = self._restriction(truck.id).speed_factor
+            empty_haul_s = assignment.route.travel_time_s / speed_factor
+            runtime.arrive_at_shovel_s = env.now + empty_haul_s
             runtime.free_at_node = zone.node
-            yield env.timeout(self._sample_s(assignment.route.travel_time_s, variability.travel_cv))
+            yield env.timeout(self._sample_s(empty_haul_s, variability.travel_cv))
 
             if not self._is_available(shovel.id):
                 # The shovel went out of service while the truck was on its way.
@@ -384,15 +392,21 @@ class Simulation:
                 self.log.record(
                     env.now, EventKind.LOAD_START, truck_id=truck.id, shovel_id=shovel.id
                 )
-                yield env.timeout(self._sample_s(shovel.load_time_s(truck), variability.load_cv))
+                payload_t = truck.payload_t * self._restriction(truck.id).load_factor
+                yield env.timeout(
+                    self._sample_s(
+                        shovel.load_time_s(truck) * self._restriction(truck.id).load_factor,
+                        variability.load_cv,
+                    )
+                )
                 self.log.record(
                     env.now,
                     EventKind.LOAD_END,
                     truck_id=truck.id,
                     shovel_id=shovel.id,
-                    payload_t=truck.payload_t,
+                    payload_t=payload_t,
                 )
-                self._dug_t[shovel.id] += truck.payload_t
+                self._dug_t[shovel.id] += payload_t
 
             destination = self.policy.choose_destination(self._snapshot(), truck.id, zone.id)
             dump = self.scenario.mine.dump_zones[destination.dump_zone_id]
@@ -405,8 +419,9 @@ class Simulation:
             runtime.origin_zone = zone.id
             runtime.assigned_dump = dump.id
             runtime.free_at_node = dump.node
-            runtime.free_at_s = env.now + haul.travel_time_s + dump.dump_time_s
-            yield env.timeout(self._sample_s(haul.travel_time_s, variability.travel_cv))
+            loaded_haul_s = haul.travel_time_s / speed_factor
+            runtime.free_at_s = env.now + loaded_haul_s + dump.dump_time_s
+            yield env.timeout(self._sample_s(loaded_haul_s, variability.travel_cv))
 
             runtime.state = CycleState.QUEUE_AT_DUMP
             self.log.record(
@@ -416,7 +431,7 @@ class Simulation:
                 dump_id=dump.id,
                 zone_id=zone.id,
             )
-            admitted_s = self._admit_to_intake(dump.id, dump.capacity_tph, truck.payload_t)
+            admitted_s = self._admit_to_intake(dump.id, dump.capacity_tph, payload_t)
             if admitted_s > env.now:
                 yield env.timeout(admitted_s - env.now)
 
@@ -431,12 +446,12 @@ class Simulation:
                     truck_id=truck.id,
                     dump_id=dump.id,
                     zone_id=zone.id,
-                    payload_t=truck.payload_t,
+                    payload_t=payload_t,
                     detail=destination.reason,
                 )
 
             route = (zone.id, dump.id)
-            self._delivered_t[route] = self._delivered_t.get(route, 0.0) + truck.payload_t
+            self._delivered_t[route] = self._delivered_t.get(route, 0.0) + payload_t
             runtime.origin_zone = None
             runtime.assigned_dump = None
             runtime.free_at_s = env.now

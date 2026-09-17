@@ -17,6 +17,7 @@ from dispatch_engine.domain.mine import (
     NodeId,
     RoadNetwork,
 )
+from dispatch_engine.domain.snapshot import Overrides, TruckRestriction
 from dispatch_engine.lp import BlendTarget, FleetType, PlanInputs
 from dispatch_engine.production_plan import StaticProductionPlan
 from pydantic import BaseModel, Field, model_validator
@@ -158,6 +159,30 @@ class Scenario:
     variability: Variability
     truck_reliability: Reliability | None
     shovel_reliability: dict[ShovelId, Reliability]
+    overrides: Overrides
+
+
+class RestrictionSpec(BaseModel):
+    """An operational restriction the dispatcher has put on one truck."""
+
+    truck: str
+    short_hauls_only: bool = False
+    speed_factor: float = Field(default=1.0, gt=0.0, le=1.0)
+    load_factor: float = Field(default=1.0, gt=0.0, le=1.0)
+
+
+class DispatcherSpec(BaseModel):
+    """Manual intervention, declared with the mine instead of written in Python.
+
+    A real dispatcher pins a truck to a shovel, parks a machine or keeps a
+    damaged one working on worse terms. All of that already travelled in the
+    snapshot; none of it could be reached from a scenario file.
+    """
+
+    locked: dict[str, str] = Field(default_factory=dict)
+    excluded_trucks: list[str] = Field(default_factory=list)
+    excluded_shovels: list[str] = Field(default_factory=list)
+    restrictions: list[RestrictionSpec] = Field(default_factory=list)
 
 
 class ScenarioSpec(BaseModel):
@@ -179,6 +204,7 @@ class ScenarioSpec(BaseModel):
     variability: VariabilitySpec = Field(default_factory=VariabilitySpec)
     # One profile for the whole fleet: the trucks are interchangeable.
     truck_reliability: ReliabilitySpec | None = None
+    dispatcher: DispatcherSpec = Field(default_factory=DispatcherSpec)
 
     @model_validator(mode="after")
     def _check_references(self) -> ScenarioSpec:
@@ -207,6 +233,23 @@ class ScenarioSpec(BaseModel):
                 )
 
         shovel_ids = {shovel.id for shovel in self.shovels}
+        truck_ids = {truck.id for truck in self.trucks}
+
+        for truck_id, shovel_id in self.dispatcher.locked.items():
+            if truck_id not in truck_ids:
+                raise ValueError(f"dispatcher locks unknown truck {truck_id!r}")
+            if shovel_id not in shovel_ids:
+                raise ValueError(f"dispatcher locks {truck_id!r} to unknown shovel {shovel_id!r}")
+        for truck_id in self.dispatcher.excluded_trucks:
+            if truck_id not in truck_ids:
+                raise ValueError(f"dispatcher excludes unknown truck {truck_id!r}")
+        for shovel_id in self.dispatcher.excluded_shovels:
+            if shovel_id not in shovel_ids:
+                raise ValueError(f"dispatcher excludes unknown shovel {shovel_id!r}")
+        for restriction in self.dispatcher.restrictions:
+            if restriction.truck not in truck_ids:
+                raise ValueError(f"restriction points at unknown truck {restriction.truck!r}")
+
         for disruption in self.disruptions:
             if disruption.shovel not in shovel_ids:
                 raise ValueError(f"disruption points at unknown shovel {disruption.shovel!r}")
@@ -322,6 +365,19 @@ class ScenarioSpec(BaseModel):
                 if (reliability := _reliability(shovel.reliability)) is not None
             },
             fleets=self._fleets(),
+            overrides=Overrides(
+                locked=dict(self.dispatcher.locked),
+                excluded_trucks=frozenset(self.dispatcher.excluded_trucks),
+                excluded_shovels=frozenset(self.dispatcher.excluded_shovels),
+                restrictions={
+                    item.truck: TruckRestriction(
+                        short_hauls_only=item.short_hauls_only,
+                        speed_factor=item.speed_factor,
+                        load_factor=item.load_factor,
+                    )
+                    for item in self.dispatcher.restrictions
+                },
+            ),
             plan_inputs=PlanInputs(
                 values_per_tonne={shovel.id: shovel.value_per_tonne for shovel in self.shovels},
                 min_rates_tph={shovel.id: shovel.min_rate_tph for shovel in self.shovels},
@@ -550,11 +606,32 @@ def toy_mine_variable() -> ScenarioSpec:
     return ScenarioSpec.model_validate(spec)
 
 
+def toy_mine_restricted() -> ScenarioSpec:
+    """The same pit with half the fleet damaged but still working.
+
+    A real dispatcher rarely parks a machine outright. A cracked tray becomes a
+    load restriction, a failing engine a speed restriction, a bad transmission a
+    short-haul restriction — the truck keeps earning on worse terms. This is the
+    scenario that exercises the operational restrictions of US 11,187,547.
+    """
+    spec = toy_mine().model_dump()
+    spec["name"] = "toy-restricted"
+    spec["dispatcher"] = DispatcherSpec(
+        restrictions=[
+            RestrictionSpec(truck="CAT01", load_factor=0.6),
+            RestrictionSpec(truck="CAT02", speed_factor=0.7),
+            RestrictionSpec(truck="CAT03", short_hauls_only=True),
+        ]
+    ).model_dump()
+    return ScenarioSpec.model_validate(spec)
+
+
 SCENARIOS = {
     "toy": toy_mine,
     "toy-failure": toy_mine_with_failure,
     "toy-stockpile": toy_mine_with_stockpile,
     "toy-variable": toy_mine_variable,
+    "toy-restricted": toy_mine_restricted,
 }
 
 

@@ -66,6 +66,7 @@ uv sync
 uv run dispatch-cli scenarios                     # escenarios disponibles
 uv run dispatch-cli plan --scenario toy           # etapa 2: el plan de producción
 uv run dispatch-cli run --scenario toy --hours 2  # corrida completa con KPIs
+uv run dispatch-cli run --scenario toy-restricted --hours 8   # media flota danada
 
 uv run dispatch-demo                              # la demo visual 3D en el navegador
 ```
@@ -262,9 +263,23 @@ Los dos puntos de corte que sostienen la arquitectura:
   de dos etapas y la baseline de la literatura, y ahí entraría a futuro una por aprendizaje por
   refuerzo.
 
-La intervención manual del despachador —fijar un camión a una pala, excluir equipos, cambiar
-prioridades— viaja en el snapshot (`Overrides`), así que cualquier política la respeta sin
-reimplementarla.
+La intervención manual del despachador —fijar un camión a una pala, excluir equipos, y las tres
+restricciones operativas de la patente— viaja en el snapshot (`Overrides`), así que cualquier política
+la respeta sin reimplementarla, y se declara en el archivo de escenario sin escribir código:
+
+```yaml
+dispatcher:
+  restrictions:
+  - truck: CAT01
+    load_factor: 0.6        # tolva rajada: sigue cargando, al 60 %
+  - truck: CAT02
+    speed_factor: 0.7       # motor fallando: anda mas lento
+  - truck: CAT03
+    short_hauls_only: true  # transmision mal: solo acarreos cortos
+```
+
+Mantener un camión así rinde entre **9 % y 15 % más valor que estacionarlo**, que era la única opción
+que el motor tenía antes.
 
 ## Desarrollo
 
@@ -294,7 +309,6 @@ de importancia:
 
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, pero la lluvia enlentece todos
   los viajes a la vez y son esos días los que marcan el peor caso.
-- Las restricciones operativas de la patente: acarreos cortos, reducción de velocidad y de carga.
 
 ## Documentación
 

@@ -19,6 +19,7 @@ problemas aparecieron en el camino.
 | [11 — Un plan ejecutable](11-plan-ejecutable.md) | Por qué el plan óptimo entregaba mineral fuera de ley |
 | [12 — La demo visual 3D](12-demo-visual.md) | Evaluación de tecnología, Three.js sobre FastAPI y los hallazgos |
 | [13 — Seguimiento del plan](13-seguimiento-del-plan.md) | La deriva sin techo, la capacidad de destino que nadie hacia cumplir, y dos hipotesis descartadas |
+| [14 — Restricciones operativas](14-restricciones-operativas.md) | Las tres restricciones de la patente y el despachador en el archivo |
 
 > Los números de los documentos 02 a 12 son de cuando se midió cada etapa. La
 > [etapa 13](13-seguimiento-del-plan.md) movió las cifras de todos los escenarios —el gemelo pasó a
@@ -52,12 +53,13 @@ los camiones contra ese plan.
 - Seguimiento del plan con acción integral: la adhesión ya no se degrada al alargar el turno.
 - Capacidad de admisión de los destinos hecha cumplir en el gemelo, con cola emergente en la
   descarga.
+- Las tres restricciones operativas de la patente (acarreos cortos, velocidad y carga reducidas),
+  declarables desde el archivo de escenario junto al resto de la intervención del despachador.
 
 **Lo que falta**
 
 - Correlación entre eventos: hoy cada tiempo se sortea independiente, y la lluvia enlentece todo a la
   vez. Es el pendiente con más recorrido.
-- Restricciones operativas de la patente (acarreos cortos, reducción de velocidad/carga).
 
 ## Cómo correrlo
 
@@ -70,6 +72,7 @@ uv run dispatch-cli run --scenario toy --hours 2               # corrida con pla
 uv run dispatch-cli run --scenario toy --hours 2 --plan static # comparación con targets fijos
 uv run dispatch-cli run --scenario toy-failure --hours 2       # con una pala caída 40 min
 uv run dispatch-cli run --scenario toy-stockpile --hours 4     # dos destinos para el mineral
+uv run dispatch-cli run --scenario toy-restricted --hours 8    # media flota danada pero trabajando
 
 uv run dispatch-cli compare --scenario toy-stockpile --hours 4 # plan vs. heurística simple
 

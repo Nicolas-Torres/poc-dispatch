@@ -26,8 +26,8 @@ uv run dispatch-cli run --scenario toy --hours 2  # corrida punta a punta
 uv run dispatch-demo                              # demo visual 3D en el navegador
 ```
 
-Las tres etapas están implementadas (la 3 en forma reducida: sin las restricciones operativas de la
-patente). El detalle de lo construido, las decisiones, las simplificaciones y los bugs encontrados
+Las tres etapas están implementadas, incluidas las restricciones operativas de la patente
+(acarreos cortos, reducción de velocidad y de carga). El detalle de lo construido, las decisiones, las simplificaciones y los bugs encontrados
 está en **`docs/desarrollo/`** (un documento por etapa). Al avanzar una etapa, actualizar ahí.
 
 El punto de corte entre etapas es `ProductionPlan` (`required_rate_tph` / `required_haulage_t`): la
