@@ -1,0 +1,38 @@
+[project]
+name = "poc-dispatch"
+version = "0.1.0"
+description = "DISPATCH-style truck assignment engine and open-pit mine digital twin"
+requires-python = ">=3.12"
+dependencies = [
+    "dispatch-cli",
+    "dispatch-engine",
+    "mine-sim",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "apps/*"]
+
+[tool.uv.sources]
+dispatch-cli = { workspace = true }
+dispatch-engine = { workspace = true }
+mine-sim = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.14",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages", "apps"]
+addopts = "-q"
